@@ -4,19 +4,23 @@ import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.math.BigDecimal;
+
 @Getter
 @Setter
 @Entity
-@Table(name = "stocks")
-public class Stock {
-
+@Table(name = "accounts")
+public class Account {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false, unique = true)
-    private String symbol;
+    @Column
+    private Long userId;
 
-    @Column(nullable = false)
-    private int totalShares;
+    @Column
+    private BigDecimal balance;
+
+    @Column
+    private BigDecimal frozenBalance;
 }

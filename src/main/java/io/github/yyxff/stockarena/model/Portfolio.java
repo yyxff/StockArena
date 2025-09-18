@@ -7,16 +7,22 @@ import lombok.Setter;
 @Getter
 @Setter
 @Entity
-@Table(name = "stocks")
-public class Stock {
+@Table(name = "portfolios")
+public class Portfolio {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false, unique = true)
-    private String symbol;
+    @Column(nullable = false)
+    private Long accountId;
 
     @Column(nullable = false)
-    private int totalShares;
+    private String stockSymbol;
+
+    @Column(nullable = false)
+    private int shares;
+
+    @Column(nullable = false)
+    private int frozenShares;
 }

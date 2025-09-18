@@ -15,7 +15,10 @@ import java.time.LocalDateTime;
 public class Order {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private long id;
+    private Long id;
+
+    @Column(nullable = false)
+    private Long accountId;
 
     @Column(nullable = false)
     private String stockSymbol;
