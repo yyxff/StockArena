@@ -9,6 +9,7 @@ import java.math.BigDecimal;
 @Data
 @NoArgsConstructor
 public class OrderRequest {
+    private Long accountId;
     private String stockSymbol;
     private int quantity;
     private BigDecimal price;

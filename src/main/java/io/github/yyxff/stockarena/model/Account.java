@@ -19,8 +19,11 @@ public class Account {
     private Long userId;
 
     @Column
-    private BigDecimal balance;
+    private BigDecimal availableBalance;
 
     @Column
     private BigDecimal frozenBalance;
+
+    @Version
+    private Long version;
 }

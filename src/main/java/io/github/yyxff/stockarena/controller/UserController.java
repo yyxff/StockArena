@@ -30,15 +30,15 @@ public class UserController {
     private PasswordEncoder passwordEncoder;
 
     @PostMapping("/register")
-    public ResponseEntity<User> register(@RequestParam String username, @RequestParam String password) {
-        if (userRepository.findByUsername(username).isPresent()) {
-            return new ResponseEntity<>(HttpStatus.CONFLICT);
+    public ResponseEntity<?> register(@RequestParam String username, @RequestParam String password) {
+        try {
+            User user = userService.register(username, password);
+            return ResponseEntity.ok(user);
+        } catch (IllegalArgumentException e) {
+            return new ResponseEntity<>(e.getMessage(), HttpStatus.CONFLICT);
         }
-        User user = new User();
-        user.setUsername(username);
-        user.setPassword(passwordEncoder.encode(password));
-        return ResponseEntity.ok(userRepository.save(user));
     }
+
 
     @PostMapping("/login")
     public ResponseEntity<?> login(@RequestParam String username,

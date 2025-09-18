@@ -25,4 +25,7 @@ public class Portfolio {
 
     @Column(nullable = false)
     private int frozenShares;
+
+    @Version
+    private Long version;
 }
