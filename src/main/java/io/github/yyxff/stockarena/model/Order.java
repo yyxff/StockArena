@@ -32,6 +32,7 @@ public class Order {
     @Column(nullable = false)
     private BigDecimal price;
 
+    @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private OrderType orderType; // "BUY" or "SELL"
 

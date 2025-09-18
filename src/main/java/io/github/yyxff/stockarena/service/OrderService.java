@@ -2,6 +2,7 @@ package io.github.yyxff.stockarena.service;
 
 import io.github.yyxff.stockarena.dto.OrderRequest;
 import io.github.yyxff.stockarena.model.Order;
+import io.github.yyxff.stockarena.model.OrderStatus;
 import io.github.yyxff.stockarena.repository.OrderRepository;
 import jakarta.persistence.OptimisticLockException;
 import jakarta.transaction.Transactional;
@@ -52,10 +53,12 @@ public class OrderService {
     private void SaveNewOrder(OrderRequest orderRequest) {
         Order order = new Order();
         order.setAccountId(orderRequest.getAccountId());
+        order.setStockSymbol(orderRequest.getStockSymbol());
         order.setPrice(orderRequest.getPrice());
         order.setTotalQuantity(orderRequest.getQuantity());
         order.setRemainingQuantity(orderRequest.getQuantity());
         order.setOrderType(orderRequest.getOrderType());
+        order.setStatus(OrderStatus.OPEN);
         orderRepository.save(order);
     }
 }
