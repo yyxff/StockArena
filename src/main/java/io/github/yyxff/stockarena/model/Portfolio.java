@@ -21,7 +21,7 @@ public class Portfolio {
     private String stockSymbol;
 
     @Column(nullable = false)
-    private int shares;
+    private int availableShares;
 
     @Column(nullable = false)
     private int frozenShares;

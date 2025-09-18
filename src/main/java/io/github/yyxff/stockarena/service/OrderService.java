@@ -18,6 +18,8 @@ public class OrderService {
     private AccountService accountService;
     @Autowired
     private OrderRepository orderRepository;
+    @Autowired
+    private PortfolioService portfolioService;
 
     @Transactional
     public void placeBuyOrder(OrderRequest orderRequest) {
@@ -27,6 +29,20 @@ public class OrderService {
         // 2. Deduct balance
         BigDecimal totalPrice = orderRequest.getPrice().multiply(BigDecimal.valueOf(orderRequest.getQuantity()));
         accountService.deductBalance(orderRequest.getAccountId(), totalPrice);
+
+        // 3. Save new order
+        SaveNewOrder(orderRequest);
+
+        return; // Success
+    }
+
+    @Transactional
+    public void placeSellOrder(OrderRequest orderRequest) {
+        // 1. Validate order
+        validateSellOrder(orderRequest);
+
+        // 2. Deduct shares
+        portfolioService.deductShares(orderRequest.getAccountId(), orderRequest.getStockSymbol(), orderRequest.getQuantity());
 
         // 3. Save new order
         SaveNewOrder(orderRequest);
@@ -47,6 +63,21 @@ public class OrderService {
         BigDecimal totalPrice = orderRequest.getPrice().multiply(BigDecimal.valueOf(orderRequest.getQuantity()));
         if (accountService.getAvailableBalance(orderRequest.getAccountId()).compareTo(totalPrice) < 0) {
             throw new IllegalArgumentException("Insufficient balance");
+        }
+    }
+
+    private void validateSellOrder(OrderRequest orderRequest) {
+        // Check quantity
+        if (orderRequest.getQuantity() <= 0) {
+            throw new IllegalArgumentException("Quantity must be greater than zero");
+        }
+        // Check price
+        if (orderRequest.getPrice().compareTo(BigDecimal.ZERO) <= 0) {
+            throw new IllegalArgumentException("Price must be greater than zero");
+        }
+        // Check holdings
+        if (portfolioService.getAvailableShares(orderRequest.getAccountId(), orderRequest.getStockSymbol()) < orderRequest.getQuantity()) {
+            throw new IllegalArgumentException("Insufficient shares to sell");
         }
     }
 
