@@ -10,6 +10,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.util.Optional;
 
 @Component
 public class InitCompanyData {
@@ -26,27 +27,31 @@ public class InitCompanyData {
     @PostConstruct
     @Transactional
     public void init() {
+
+        Optional<Account> existingCompany = accountRepository.findById(1L);
+
+        if (existingCompany.isPresent()) {
+            System.out.println("Company account already exists. Skipping initialization.");
+            return;
+        }
+        Account company = existingCompany.get();
+
         // 1. Create Company Account
-        Account company = accountRepository.findById(1L).orElseGet(() -> {
-            Account acc = new Account();
-            // acc.setId(1L);
-            // acc.setType("COMPANY");
-            acc.setAvailableBalance(BigDecimal.valueOf(1000000));
-            acc.setFrozenBalance(BigDecimal.ZERO);
-            return accountRepository.save(acc);
-        });
+        Account acc = new Account();
+        // acc.setId(1L);
+        // acc.setType("COMPANY");
+        acc.setAvailableBalance(BigDecimal.valueOf(1000000));
+        acc.setFrozenBalance(BigDecimal.ZERO);
+        accountRepository.save(acc);
 
         // 2. Create initial portfolio for the company
         String stockSymbol = "AAPL";
-        Portfolio portfolio = portfolioRepository.findByAccountIdAndStockSymbol(company.getId(), stockSymbol)
-                .orElseGet(() -> {
-                    Portfolio p = new Portfolio();
-                    p.setAccountId(company.getId());
-                    p.setStockSymbol(stockSymbol);
-                    p.setAvailableShares(10000);
-                    p.setFrozenShares(0);
-                    return portfolioRepository.save(p);
-                });
+        Portfolio portfolio = new Portfolio();
+        portfolio.setAccountId(company.getId());
+        portfolio.setStockSymbol(stockSymbol);
+        portfolio.setAvailableShares(10000);
+        portfolio.setFrozenShares(0);
+        portfolioRepository.save(portfolio);
 
         // 3. Create initial sell orders
         int sellQuantity = 1000;

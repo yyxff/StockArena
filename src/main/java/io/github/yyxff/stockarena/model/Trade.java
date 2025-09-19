@@ -18,7 +18,7 @@ public class Trade {
     private Long id;
 
     @Column(nullable = false)
-    private String symbol;
+    private String stockSymbol;
 
     @Column(nullable = false)
     private BigDecimal price;

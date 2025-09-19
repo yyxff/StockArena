@@ -25,6 +25,19 @@ public class PortfolioService {
     }
 
     @Transactional
+    public Portfolio getOrCreatePortfolio(Long accountId, String stockSymbol) {
+        return portfolioRepository.findByAccountIdAndStockSymbol(accountId, stockSymbol)
+                .orElseGet(() -> {
+                    Portfolio newPortfolio = new Portfolio();
+                    newPortfolio.setAccountId(accountId);
+                    newPortfolio.setStockSymbol(stockSymbol);
+                    newPortfolio.setAvailableShares(0);
+                    newPortfolio.setFrozenShares(0);
+                    return portfolioRepository.save(newPortfolio);
+                });
+    }
+
+    @Transactional
     public void addShares(Long accountId, String stockSymbol, int shares) {
         modifyShares(accountId, stockSymbol, shares, (portfolio, sh) -> {
             portfolio.setAvailableShares(portfolio.getAvailableShares() + sh);
@@ -35,7 +48,7 @@ public class PortfolioService {
     public void deductShares(Long accountId, String stockSymbol, int shares) {
         modifyShares(accountId, stockSymbol, shares, (portfolio, sh) -> {
             if (portfolio.getFrozenShares() < sh) {
-                throw new IllegalArgumentException("Insufficient frozen shares");
+                throw new IllegalArgumentException("Insufficient frozen shares: " + portfolio.getFrozenShares() + " requested: " + sh);
             }
             portfolio.setAvailableShares(portfolio.getAvailableShares() - sh);
         });

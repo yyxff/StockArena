@@ -113,8 +113,32 @@ public class OrderService {
         msg.setPrice(order.getPrice());
         msg.setTotalQuantity(order.getTotalQuantity());
         msg.setRemainingQuantity(order.getRemainingQuantity());
+        msg.setCreatedAt(order.getCreatedAt());
 
         // 2. Send to MQ
         kafkaTemplate.send(ORDER_TOPIC, order.getStockSymbol(), msg);
+    }
+
+    @Transactional
+    public void matchOrder(Order buyOrder, Order sellOrder) {
+        int sellQuantity = sellOrder.getRemainingQuantity();
+        int buyQuantity = buyOrder.getRemainingQuantity();
+        int matchedQuantity = Math.min(sellQuantity, buyQuantity);
+
+        // Update order statuses and remaining quantities
+        sellOrder.setRemainingQuantity(sellQuantity - matchedQuantity);
+        buyOrder.setRemainingQuantity(buyQuantity - matchedQuantity);
+        if (sellOrder.getRemainingQuantity() == 0) {
+            sellOrder.setStatus(OrderStatus.FILLED);
+        } else {
+            sellOrder.setStatus(OrderStatus.PARTIALLY_FILLED);
+        }
+        if (buyOrder.getRemainingQuantity() == 0) {
+            buyOrder.setStatus(OrderStatus.FILLED);
+        } else {
+            buyOrder.setStatus(OrderStatus.PARTIALLY_FILLED);
+        }
+        orderRepository.save(sellOrder);
+        orderRepository.save(buyOrder);
     }
 }

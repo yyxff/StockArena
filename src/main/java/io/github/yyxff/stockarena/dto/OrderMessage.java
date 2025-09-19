@@ -5,6 +5,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 
 @Data
 @NoArgsConstructor
@@ -16,4 +17,5 @@ public class OrderMessage {
     private int remainingQuantity;
     private OrderType orderType;
     private BigDecimal price;
+    private LocalDateTime createdAt;
 }
