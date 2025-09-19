@@ -29,9 +29,10 @@ public class InitCompanyData {
         // 1. Create Company Account
         Account company = accountRepository.findById(1L).orElseGet(() -> {
             Account acc = new Account();
-            acc.setId(1L);
+            // acc.setId(1L);
             // acc.setType("COMPANY");
             acc.setAvailableBalance(BigDecimal.valueOf(1000000));
+            acc.setFrozenBalance(BigDecimal.ZERO);
             return accountRepository.save(acc);
         });
 

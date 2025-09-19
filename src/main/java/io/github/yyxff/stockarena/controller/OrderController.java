@@ -14,7 +14,7 @@ public class OrderController {
 
     @PostMapping("/sell")
     public void placeSellOrder(@RequestBody OrderRequest orderRequest) {
-
+        orderService.placeSellOrder(orderRequest);
     }
 
     @PostMapping("/buy")

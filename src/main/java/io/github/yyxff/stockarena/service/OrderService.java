@@ -1,12 +1,14 @@
 package io.github.yyxff.stockarena.service;
 
+import io.github.yyxff.stockarena.dto.OrderMessage;
 import io.github.yyxff.stockarena.dto.OrderRequest;
 import io.github.yyxff.stockarena.model.Order;
 import io.github.yyxff.stockarena.model.OrderStatus;
 import io.github.yyxff.stockarena.repository.OrderRepository;
-import jakarta.persistence.OptimisticLockException;
 import jakarta.transaction.Transactional;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -20,6 +22,10 @@ public class OrderService {
     private OrderRepository orderRepository;
     @Autowired
     private PortfolioService portfolioService;
+    @Autowired
+    private KafkaTemplate kafkaTemplate;
+
+    private static final String ORDER_TOPIC = "orders";
 
     @Transactional
     public void placeBuyOrder(OrderRequest orderRequest) {
@@ -31,7 +37,10 @@ public class OrderService {
         accountService.deductBalance(orderRequest.getAccountId(), totalPrice);
 
         // 3. Save new order
-        SaveNewOrder(orderRequest);
+        Order order = saveNewOrder(orderRequest);
+
+        // 4. Send order to MQ
+        sendOrderToMQ(order);
 
         return; // Success
     }
@@ -45,8 +54,10 @@ public class OrderService {
         portfolioService.deductShares(orderRequest.getAccountId(), orderRequest.getStockSymbol(), orderRequest.getQuantity());
 
         // 3. Save new order
-        SaveNewOrder(orderRequest);
+        Order order = saveNewOrder(orderRequest);
 
+        // 4. Send order to MQ
+        sendOrderToMQ(order);
         return; // Success
     }
 
@@ -81,7 +92,7 @@ public class OrderService {
         }
     }
 
-    private void SaveNewOrder(OrderRequest orderRequest) {
+    private Order saveNewOrder(OrderRequest orderRequest) {
         Order order = new Order();
         order.setAccountId(orderRequest.getAccountId());
         order.setStockSymbol(orderRequest.getStockSymbol());
@@ -90,6 +101,21 @@ public class OrderService {
         order.setRemainingQuantity(orderRequest.getQuantity());
         order.setOrderType(orderRequest.getOrderType());
         order.setStatus(OrderStatus.OPEN);
-        orderRepository.save(order);
+        return orderRepository.save(order);
+    }
+
+    private void sendOrderToMQ(Order order) {
+        // 1. Construct OrderMessage
+        OrderMessage msg = new OrderMessage();
+        msg.setOrderId(order.getId());
+        msg.setAccountId(order.getAccountId());
+        msg.setStockSymbol(order.getStockSymbol());
+        msg.setOrderType(order.getOrderType());
+        msg.setPrice(order.getPrice());
+        msg.setTotalQuantity(order.getTotalQuantity());
+        msg.setRemainingQuantity(order.getRemainingQuantity());
+
+        // 2. Send to MQ
+        kafkaTemplate.send(ORDER_TOPIC, order.getStockSymbol(), msg);
     }
 }
