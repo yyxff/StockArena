@@ -47,6 +47,7 @@ public class MatchingInit {
             MatchingEngine engine = engineManager.getEngineByPartition(partition);
 
             // Update in-memory order book
+            System.out.println(partition + ": " + message);
             if (message.getOrderType() == OrderType.BUY) {
                 engine.getOrCreateOrderBook(message.getStockSymbol()).getBuyOrders().offer(message);
             } else if (message.getOrderType() == OrderType.SELL) {
@@ -74,6 +75,7 @@ public class MatchingInit {
         msg.setPrice(order.getPrice());
         msg.setTotalQuantity(order.getTotalQuantity());
         msg.setRemainingQuantity(order.getRemainingQuantity());
+        msg.setCreatedAt(order.getCreatedAt());
         return msg;
     }
 }
