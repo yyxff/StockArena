@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.util.Optional;
+import java.util.function.BiConsumer;
 
 @Service
 public class PortfolioService {
@@ -24,20 +25,52 @@ public class PortfolioService {
     }
 
     @Transactional
+    public void addShares(Long accountId, String stockSymbol, int shares) {
+        modifyShares(accountId, stockSymbol, shares, (portfolio, sh) -> {
+            portfolio.setAvailableShares(portfolio.getAvailableShares() + sh);
+        });
+    }
+
+    @Transactional
     public void deductShares(Long accountId, String stockSymbol, int shares) {
+        modifyShares(accountId, stockSymbol, shares, (portfolio, sh) -> {
+            if (portfolio.getFrozenShares() < sh) {
+                throw new IllegalArgumentException("Insufficient frozen shares");
+            }
+            portfolio.setAvailableShares(portfolio.getAvailableShares() - sh);
+        });
+    }
+
+    @Transactional
+    public void freezeShares(Long accountId, String stockSymbol, int shares) {
+        modifyShares(accountId, stockSymbol, shares, (portfolio, sh) -> {
+            if (portfolio.getAvailableShares() < sh) {
+                throw new IllegalArgumentException("Insufficient available shares");
+            }
+            portfolio.setAvailableShares(portfolio.getAvailableShares() - sh);
+            portfolio.setFrozenShares(portfolio.getFrozenShares() + sh);
+        });
+    }
+
+    @Transactional
+    public void releaseShares(Long accountId, String stockSymbol, int shares) {
+        modifyShares(accountId, stockSymbol, shares, (portfolio, sh) -> {
+            if (portfolio.getFrozenShares() < sh) {
+                throw new IllegalArgumentException("Insufficient frozen shares");
+            }
+            portfolio.setAvailableShares(portfolio.getAvailableShares() + sh);
+            portfolio.setFrozenShares(portfolio.getFrozenShares() - sh);
+        });
+    }
+
+    private void modifyShares(Long accountId, String stockSymbol, int shares, BiConsumer<Portfolio, Integer> portfolioUpdater) {
         Portfolio portfolio = portfolioRepository
                 .findByAccountIdAndStockSymbol(accountId, stockSymbol)
                 .orElseThrow(() -> new IllegalArgumentException("Portfolio not found"));
 
         for (int i = 0; i < MAX_RETRIES; i++) {
             try {
-                if (portfolio.getAvailableShares() < 0) {
-                    throw new IllegalArgumentException("Insufficient available shares");
-                }
-
-                portfolio.setAvailableShares(portfolio.getAvailableShares() - shares);
-                portfolio.setFrozenShares(portfolio.getFrozenShares() + shares);
-
+                portfolioUpdater.accept(portfolio, shares);
                 portfolioRepository.save(portfolio);
                 return; // Success
             } catch (OptimisticLockException e) {

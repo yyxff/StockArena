@@ -8,6 +8,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.util.function.BiConsumer;
 
 @Service
 public class AccountService {
@@ -28,18 +29,50 @@ public class AccountService {
     }
 
     @Transactional
+    public void releaseBalance(Long accountId, BigDecimal amount) {
+        modifyBalance(accountId, amount, (account, amt) -> {
+            if (account.getFrozenBalance().compareTo(amt) < 0) {
+                throw new IllegalArgumentException("Insufficient frozen balance");
+            }
+            account.setAvailableBalance(account.getAvailableBalance().add(amt));
+            account.setFrozenBalance(account.getFrozenBalance().subtract(amt));
+        });
+    }
+
+    @Transactional
+    public void freezeBalance(Long accountId, BigDecimal amount) {
+        modifyBalance(accountId, amount, (account, amt) -> {
+            if (account.getAvailableBalance().compareTo(amt) < 0) {
+                throw new IllegalArgumentException("Insufficient available balance");
+            }
+            account.setAvailableBalance(account.getAvailableBalance().subtract(amt));
+            account.setFrozenBalance(account.getFrozenBalance().add(amt));
+        });
+    }
+
+    @Transactional
+    public void addBalance(Long accountId, BigDecimal amount) {
+        modifyBalance(accountId, amount, (account, amt) -> {
+            account.setAvailableBalance(account.getAvailableBalance().add(amt));
+        });
+    }
+
+    @Transactional
     public void deductBalance(Long accountId, BigDecimal amount) {
+        modifyBalance(accountId, amount, (account, amt) -> {
+            if (account.getFrozenBalance().compareTo(amt) < 0) {
+                throw new IllegalArgumentException("Insufficient frozen balance");
+            }
+            account.setAvailableBalance(account.getFrozenBalance().subtract(amt));
+        });
+    }
+
+    private void modifyBalance(Long accountId, BigDecimal amount, BiConsumer<Account, BigDecimal> balanceUpdater) {
         Account account = getAccountById(accountId);
 
         for (int i = 0; i < MAX_RETRIES; i++) {
             try {
-                if (account.getAvailableBalance().compareTo(amount) < 0) {
-                    throw new IllegalArgumentException("Insufficient balance");
-                }
-
-                account.setAvailableBalance(account.getAvailableBalance().subtract(amount));
-                account.setFrozenBalance(account.getFrozenBalance().add(amount));
-
+                balanceUpdater.accept(account, amount);
                 accountRepository.save(account);
                 return; // Success
             } catch (OptimisticLockException e) {

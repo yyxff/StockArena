@@ -6,7 +6,6 @@ import io.github.yyxff.stockarena.model.Order;
 import io.github.yyxff.stockarena.model.OrderStatus;
 import io.github.yyxff.stockarena.repository.OrderRepository;
 import jakarta.transaction.Transactional;
-import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
@@ -32,9 +31,9 @@ public class OrderService {
         // 1. Validate order
         validateBuyOrder(orderRequest);
 
-        // 2. Deduct balance
+        // 2. Freeze balance
         BigDecimal totalPrice = orderRequest.getPrice().multiply(BigDecimal.valueOf(orderRequest.getQuantity()));
-        accountService.deductBalance(orderRequest.getAccountId(), totalPrice);
+        accountService.freezeBalance(orderRequest.getAccountId(), totalPrice);
 
         // 3. Save new order
         Order order = saveNewOrder(orderRequest);
@@ -50,8 +49,8 @@ public class OrderService {
         // 1. Validate order
         validateSellOrder(orderRequest);
 
-        // 2. Deduct shares
-        portfolioService.deductShares(orderRequest.getAccountId(), orderRequest.getStockSymbol(), orderRequest.getQuantity());
+        // 2. Freeze shares
+        portfolioService.freezeShares(orderRequest.getAccountId(), orderRequest.getStockSymbol(), orderRequest.getQuantity());
 
         // 3. Save new order
         Order order = saveNewOrder(orderRequest);
