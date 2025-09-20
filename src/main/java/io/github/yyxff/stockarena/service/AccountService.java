@@ -24,8 +24,8 @@ public class AccountService {
     }
 
     public BigDecimal getAvailableBalance(Long accountId) {
-        // Placeholder implementation
-        return BigDecimal.valueOf(10000);
+        Account account = getAccountById(accountId);
+        return account.getAvailableBalance();
     }
 
     @Transactional
@@ -63,7 +63,7 @@ public class AccountService {
             if (account.getFrozenBalance().compareTo(amt) < 0) {
                 throw new IllegalArgumentException("Insufficient frozen balance");
             }
-            account.setAvailableBalance(account.getFrozenBalance().subtract(amt));
+            account.setFrozenBalance(account.getFrozenBalance().subtract(amt));
         });
     }
 

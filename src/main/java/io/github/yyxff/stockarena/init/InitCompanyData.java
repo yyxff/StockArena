@@ -34,7 +34,6 @@ public class InitCompanyData {
             System.out.println("Company account already exists. Skipping initialization.");
             return;
         }
-        Account company = existingCompany.get();
 
         // 1. Create Company Account
         Account acc = new Account();
@@ -47,7 +46,7 @@ public class InitCompanyData {
         // 2. Create initial portfolio for the company
         String stockSymbol = "AAPL";
         Portfolio portfolio = new Portfolio();
-        portfolio.setAccountId(company.getId());
+        portfolio.setAccountId(acc.getId());
         portfolio.setStockSymbol(stockSymbol);
         portfolio.setAvailableShares(10000);
         portfolio.setFrozenShares(0);
@@ -63,7 +62,7 @@ public class InitCompanyData {
             portfolioRepository.save(portfolio);
 
             Order order = new Order();
-            order.setAccountId(company.getId());
+            order.setAccountId(acc.getId());
             order.setStockSymbol(stockSymbol);
             order.setOrderType(OrderType.SELL);
             order.setPrice(sellPrice);
