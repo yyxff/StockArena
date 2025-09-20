@@ -20,7 +20,7 @@ public class AccountService {
 
 
     public Account getAccountById(Long accountId) {
-        return accountRepository.findById(accountId).orElseThrow(() -> new IllegalArgumentException("Account not found"));
+        return accountRepository.findById(accountId).orElseThrow(() -> new IllegalArgumentException("Account "+accountId+" not found"));
     }
 
     public BigDecimal getAvailableBalance(Long accountId) {

@@ -41,13 +41,14 @@ public class MatchingEngine {
     }
 
 
-    public void match(OrderMessage orderMessage) {
+    public MatchResult match(OrderMessage orderMessage) {
         OrderBook orderBook = orderBooks.computeIfAbsent(orderMessage.getStockSymbol(), k -> new OrderBook(k));
         MatchResult matchResult = orderBook.match(orderMessage);
 
 
         System.out.println("Match result for order: " + orderMessage);
         System.out.println(matchResult);
+        return matchResult;
         // TODO: send match result to mq to save it
         // for (TradeMessage tradeMessage : matchResult.getTrades()) {
         //     System.out.println(tradeMessage);

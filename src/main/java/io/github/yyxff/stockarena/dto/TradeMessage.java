@@ -17,6 +17,8 @@ public class TradeMessage {
     private String stockSymbol;
     private BigDecimal price;
     private int quantity;
+    private long buyerAccountId;
+    private long sellerAccountId;
     private long buyOrderId;
     private long sellOrderId;
     private LocalDateTime createdAt;

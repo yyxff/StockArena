@@ -63,6 +63,8 @@ public class OrderBook {
                 trade.setStockSymbol(buyOrder.getStockSymbol());
                 trade.setPrice(bestSellOrder.getPrice()); // Trade at sell price
                 trade.setQuantity(tradeQuantity);
+                trade.setBuyerAccountId(buyOrder.getAccountId());
+                trade.setSellerAccountId(bestSellOrder.getAccountId());
                 trade.setBuyOrderId(buyOrder.getOrderId());
                 trade.setSellOrderId(bestSellOrder.getOrderId());
                 trade.setCreatedAt(java.time.LocalDateTime.now());
@@ -108,6 +110,8 @@ public class OrderBook {
                 trade.setStockSymbol(sellOrder.getStockSymbol());
                 trade.setPrice(bestBuyOrder.getPrice()); // Trade at buy price
                 trade.setQuantity(tradeQuantity);
+                trade.setBuyerAccountId(bestBuyOrder.getAccountId());
+                trade.setSellerAccountId(sellOrder.getAccountId());
                 trade.setBuyOrderId(bestBuyOrder.getOrderId());
                 trade.setSellOrderId(sellOrder.getOrderId());
                 trade.setCreatedAt(java.time.LocalDateTime.now());
