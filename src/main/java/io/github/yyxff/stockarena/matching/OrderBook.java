@@ -1,12 +1,16 @@
 package io.github.yyxff.stockarena.matching;
 
+import io.github.yyxff.stockarena.dto.BalanceChangeDTO;
 import io.github.yyxff.stockarena.dto.OrderMessage;
 import io.github.yyxff.stockarena.dto.TradeMessage;
+import io.github.yyxff.stockarena.dto.TradeWithChanges;
 import io.github.yyxff.stockarena.matching.dto.MatchResult;
+import io.github.yyxff.stockarena.model.BalanceChangeType;
 import io.github.yyxff.stockarena.model.Order;
 import io.github.yyxff.stockarena.model.OrderType;
 import lombok.Data;
 
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.PriorityQueue;
@@ -56,6 +60,8 @@ public class OrderBook {
         while (buyOrder.getRemainingQuantity() > 0 && !sellOrders.isEmpty()) {
             OrderMessage bestSellOrder = sellOrders.peek();
             if (bestSellOrder.getPrice().compareTo(buyOrder.getPrice()) <= 0) {
+
+                TradeWithChanges tradeWithChanges = new TradeWithChanges(new ArrayList<>());
                 // Match found
                 int tradeQuantity = Math.min(buyOrder.getRemainingQuantity(), bestSellOrder.getRemainingQuantity());
                 // Create trade
@@ -69,7 +75,40 @@ public class OrderBook {
                 trade.setSellOrderId(bestSellOrder.getOrderId());
                 trade.setCreatedAt(java.time.LocalDateTime.now());
                 // Add trade to result
-                matchResult.getTrades().add(trade);
+                tradeWithChanges.setTrade(trade);
+
+                // Get total trade price
+                BigDecimal totalPrice = trade.getPrice().multiply(BigDecimal.valueOf(tradeQuantity));
+                // Create Balance Change Records
+                // Buyer balance deduction
+                BalanceChangeDTO buyerDeduction = new BalanceChangeDTO();
+                buyerDeduction.setAccountId(buyOrder.getAccountId());
+                buyerDeduction.setOrderId(buyOrder.getOrderId());
+                buyerDeduction.setTradeId(trade.getId());
+                buyerDeduction.setChangeType(BalanceChangeType.TRADE_DEDUCT);
+                buyerDeduction.setAmount(totalPrice);
+                tradeWithChanges.getBalanceChanges().add(buyerDeduction);
+                // Buyer refund frozen balance if needed
+                if (buyOrder.getPrice().compareTo(bestSellOrder.getPrice()) > 0) {
+                    BalanceChangeDTO buyerRefund = new BalanceChangeDTO();
+                    buyerRefund.setAccountId(buyOrder.getAccountId());
+                    buyerRefund.setOrderId(buyOrder.getOrderId());
+                    buyerRefund.setTradeId(trade.getId());
+                    buyerRefund.setChangeType(BalanceChangeType.TRADE_REFUND);
+                    buyerRefund.setAmount(buyOrder.getPrice().multiply(BigDecimal.valueOf(tradeQuantity)).subtract(totalPrice));
+                    tradeWithChanges.getBalanceChanges().add(buyerRefund);
+                }
+                // Seller balance addition
+                BalanceChangeDTO sellerAddition = new BalanceChangeDTO();
+                sellerAddition.setAccountId(bestSellOrder.getAccountId());
+                sellerAddition.setOrderId(bestSellOrder.getOrderId());
+                sellerAddition.setTradeId(trade.getId());
+                sellerAddition.setChangeType(BalanceChangeType.TRADE_ADD);
+                sellerAddition.setAmount(totalPrice);
+                tradeWithChanges.getBalanceChanges().add(sellerAddition);
+
+                matchResult.getTradeWithChanges().add(tradeWithChanges);
+
 
                 // Update quantities
                 buyOrder.setRemainingQuantity(buyOrder.getRemainingQuantity() - tradeQuantity);
@@ -103,6 +142,8 @@ public class OrderBook {
         while (sellOrder.getRemainingQuantity() > 0 && !buyOrders.isEmpty()) {
             OrderMessage bestBuyOrder = buyOrders.peek();
             if (bestBuyOrder.getPrice().compareTo(sellOrder.getPrice()) >= 0) {
+
+                TradeWithChanges tradeWithChanges = new TradeWithChanges(new ArrayList<>());
                 // Match found
                 int tradeQuantity = Math.min(sellOrder.getRemainingQuantity(), bestBuyOrder.getRemainingQuantity());
                 // Create trade
@@ -116,7 +157,29 @@ public class OrderBook {
                 trade.setSellOrderId(sellOrder.getOrderId());
                 trade.setCreatedAt(java.time.LocalDateTime.now());
                 // Add trade to result
-                matchResult.getTrades().add(trade);
+                tradeWithChanges.setTrade(trade);
+
+
+                // Get total trade price
+                BigDecimal totalPrice = trade.getPrice().multiply(BigDecimal.valueOf(tradeQuantity));
+                // Create Balance Change Records
+                // Buyer balance deduction
+                BalanceChangeDTO buyerDeduction = new BalanceChangeDTO();
+                buyerDeduction.setAccountId(bestBuyOrder.getAccountId());
+                buyerDeduction.setOrderId(bestBuyOrder.getOrderId());
+                buyerDeduction.setTradeId(trade.getId());
+                buyerDeduction.setChangeType(BalanceChangeType.TRADE_DEDUCT);
+                buyerDeduction.setAmount(totalPrice);
+                tradeWithChanges.getBalanceChanges().add(buyerDeduction);
+                // Seller balance addition
+                BalanceChangeDTO sellerAddition = new BalanceChangeDTO();
+                sellerAddition.setAccountId(sellOrder.getAccountId());
+                sellerAddition.setOrderId(sellOrder.getOrderId());
+                sellerAddition.setTradeId(trade.getId());
+                sellerAddition.setChangeType(BalanceChangeType.TRADE_ADD);
+                sellerAddition.setAmount(totalPrice);
+                tradeWithChanges.getBalanceChanges().add(sellerAddition);
+                matchResult.getTradeWithChanges().add(tradeWithChanges);
 
                 // Update quantities
                 sellOrder.setRemainingQuantity(sellOrder.getRemainingQuantity() - tradeQuantity);

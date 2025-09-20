@@ -25,6 +25,7 @@ public class BalanceChange {
     @Column
     private Long tradeId;
 
+    @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private BalanceChangeType changeType;
 
