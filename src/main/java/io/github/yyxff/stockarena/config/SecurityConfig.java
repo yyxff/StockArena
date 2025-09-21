@@ -20,10 +20,15 @@ public class SecurityConfig {
         http
                 .csrf(csrf -> csrf.disable()) // turn off CSRF in dev
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("api/users/register", "api/users/login").permitAll()
+                        .requestMatchers("/api/users/register", "/api/users/login").permitAll()
                         .anyRequest().authenticated()
                 )
-                .formLogin(Customizer.withDefaults());
+                .sessionManagement(session -> session
+                        .sessionFixation().migrateSession()
+                )
+                .httpBasic(Customizer.withDefaults())
+                .formLogin(form -> form.disable()) // forbid default login page
+                .cors(Customizer.withDefaults());
 
         return http.build();
     }

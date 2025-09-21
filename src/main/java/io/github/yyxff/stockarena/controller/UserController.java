@@ -1,5 +1,6 @@
 package io.github.yyxff.stockarena.controller;
 
+import io.github.yyxff.stockarena.dto.UserRequest;
 import io.github.yyxff.stockarena.model.User;
 import io.github.yyxff.stockarena.repository.UserRepository;
 import io.github.yyxff.stockarena.service.UserService;
@@ -30,9 +31,9 @@ public class UserController {
     private PasswordEncoder passwordEncoder;
 
     @PostMapping("/register")
-    public ResponseEntity<?> register(@RequestParam String username, @RequestParam String password) {
+    public ResponseEntity<?> register(@RequestBody UserRequest userReq) {
         try {
-            User user = userService.register(username, password);
+            User user = userService.register(userReq.getUsername(), userReq.getPassword());
             return ResponseEntity.ok(user);
         } catch (IllegalArgumentException e) {
             return new ResponseEntity<>(e.getMessage(), HttpStatus.CONFLICT);
@@ -41,10 +42,9 @@ public class UserController {
 
 
     @PostMapping("/login")
-    public ResponseEntity<?> login(@RequestParam String username,
-                                   @RequestParam String password,
+    public ResponseEntity<?> login(@RequestBody UserRequest userReq,
                                    HttpServletRequest request) {
-        Optional<User> userOpt = userService.login(username, password);
+        Optional<User> userOpt = userService.login(userReq.getUsername(), userReq.getPassword());
         if (userOpt.isPresent()) {
             User user = userOpt.get();
 
