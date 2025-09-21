@@ -1,6 +1,7 @@
 package io.github.yyxff.stockarena.matching.service;
 
 import io.github.yyxff.stockarena.dto.OrderMessage;
+import io.github.yyxff.stockarena.matching.MatchingWorker;
 import io.github.yyxff.stockarena.matching.OrderBook;
 import io.github.yyxff.stockarena.matching.dto.MatchResult;
 import io.github.yyxff.stockarena.repository.AccountRepository;
@@ -14,56 +15,59 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Scope;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class MatchingEngine {
 
-    // @Autowired
-    // private OrderRepository orderRepository;
-    // @Autowired
-    // private AccountService accountService;
-    // @Autowired
-    // private PortfolioService portfolioService;
-    // @Autowired
-    // private PortfolioRepository portfolioRepository;
-    // @Autowired
-    // private AccountRepository accountRepository;
-    // @Autowired
-    // private OrderService orderService;
-
-    private final Map<String, OrderBook> orderBooks = new ConcurrentHashMap<>();
-
     private final String engineName;
 
-    public MatchingEngine(String engineName) {
+    private final int workerCount;
+
+    /**
+     * List of workers processing orders
+     * We manually manage threads here instead of threads pool
+     * Because we have self-defined dispatch logic: hash by stock symbol
+     */
+    private final List<MatchingWorker> workers;
+
+    private final PersistenceService persistenceService;
+
+
+    public MatchingEngine(String engineName, int workerCount, PersistenceService persistenceService) {
         this.engineName = engineName;
+        this.workerCount = workerCount;
+        this.workers = new ArrayList<>();
+        this.persistenceService = persistenceService;
+        for (int i = 0; i < workerCount; i++) {
+            MatchingWorker worker = new MatchingWorker(
+                    "MatchingWorker-" + engineName + "-" + i
+                    ,persistenceService);
+            workers.add(worker);
+            new Thread(worker).start();
+        }
     }
 
-
-    public MatchResult match(OrderMessage orderMessage) {
-        OrderBook orderBook = orderBooks.computeIfAbsent(orderMessage.getStockSymbol(), k -> new OrderBook(k));
-        MatchResult matchResult = orderBook.match(orderMessage);
-
-
-        System.out.println("Match result for order: " + orderMessage);
-        System.out.println(matchResult);
-        return matchResult;
-        // TODO: send match result to mq to save it
-        // for (TradeMessage tradeMessage : matchResult.getTrades()) {
-        //     System.out.println(tradeMessage);
-        // }
-        // for (OrderMessage order : matchResult.getFilledOrders()) {
-        //     System.out.println(order);
-        // }
-        // System.out.println("Partially fiiled: " + matchResult.getPartiallyFilledOrder());
+    /**
+     * Dispatch order to a corresponding worker based on stock symbol hash
+     * So that same stock orders are always processed by the same worker in order
+     * @param orderMessage
+     */
+    public void dispatch(OrderMessage orderMessage) {
+        int workerIndex = Math.abs(orderMessage.getStockSymbol().hashCode()) % workerCount;
+        workers.get(workerIndex).submit(orderMessage);
     }
 
-    public OrderBook getOrderBook(String stockSymbol) {
-        return orderBooks.get(stockSymbol);
-    }
-
-    public OrderBook getOrCreateOrderBook(String stockSymbol) {
-        return orderBooks.computeIfAbsent(stockSymbol, k -> new OrderBook(stockSymbol));
+    /**
+     * Send init order message to the corresponding worker to restore order book to memory
+     * @param orderMessage
+     */
+    public void initOrder(OrderMessage orderMessage) {
+        int workerIndex = Math.abs(orderMessage.getStockSymbol().hashCode()) % workerCount;
+        workers.get(workerIndex).initOrder(orderMessage);
     }
 }

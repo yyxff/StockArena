@@ -1,18 +1,13 @@
 package io.github.yyxff.stockarena.matching;
 
 import io.github.yyxff.stockarena.dto.OrderMessage;
-import io.github.yyxff.stockarena.matching.dto.MatchResult;
 import io.github.yyxff.stockarena.matching.service.MatchingEngine;
-import io.github.yyxff.stockarena.matching.service.PersistenceService;
-import org.apache.kafka.common.PartitionInfo;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.kafka.annotation.KafkaListener;
+import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.stereotype.Component;
-import org.apache.kafka.clients.consumer.Consumer;
+import org.springframework.kafka.support.KafkaHeaders;
 
-import java.nio.charset.StandardCharsets;
-import java.util.List;
 
 @Component
 public class MatchingConsumer {
@@ -20,28 +15,17 @@ public class MatchingConsumer {
     @Autowired
     private MatchingEngineManager matchingEngineManager;
 
-    @Autowired
-    private PersistenceService persistenceService;
-
-    private MatchingEngine matchingEngine;
-
-
-    @KafkaListener(topics = "orders", groupId = "order-matcher")
-    public void consume(OrderMessage orderMessage, Consumer<?, ?> consumer) {
-        if (matchingEngine == null) {
-            List<PartitionInfo> partitions = consumer.partitionsFor("orders");
-            int partition = getKafkaPartition(orderMessage.getStockSymbol(), partitions.size());
-            matchingEngine = matchingEngineManager.getEngineByPartition(partition);
-            System.out.println("assign engine " + partition);
-        }
-        MatchResult matchResult = matchingEngine.match(orderMessage);
-        persistenceService.saveMatchResult(matchResult);
-    }
-
-    private int getKafkaPartition(String key, int partitionCount) {
-        byte[] keyBytes = key.getBytes(StandardCharsets.UTF_8);
-        return org.apache.kafka.common.utils.Utils.toPositive(
-                org.apache.kafka.common.utils.Utils.murmur2(keyBytes)
-        ) % partitionCount;
+    /**
+     * Consume order messages from Kafka and dispatch to the appropriate MatchingEngine based on partition.
+     * For instance: Partition 0 -> MatchingEngine 0
+     * Because engine 0 will recover and process all orders belonging to partition 0
+     * @param orderMessage
+     * @param partition
+     */
+    @KafkaListener(topics = "orders", groupId = "order-matcher", concurrency = "4")
+    public void consume(OrderMessage orderMessage, @Header(KafkaHeaders.RECEIVED_PARTITION) int partition) {
+        MatchingEngine engine = matchingEngineManager.getEngineByPartition(partition);
+        System.out.println("assign to engine " + partition);
+        engine.dispatch(orderMessage);
     }
 }

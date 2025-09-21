@@ -29,10 +29,13 @@ public class PersistenceService {
 
     @Autowired
     private OrderRepository orderRepository;
+
     @Autowired
     private AccountService accountService;
+
     @Autowired
     private PortfolioService portfolioService;
+
     @Autowired
     private BalanceChangeRepository balanceChangeRepository;
 

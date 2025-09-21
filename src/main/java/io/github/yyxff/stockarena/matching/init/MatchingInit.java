@@ -29,7 +29,7 @@ public class MatchingInit {
 
     @EventListener(ApplicationReadyEvent.class)
     public void init() {
-        System.out.println("恢复未完成订单到撮合引擎...");
+        System.out.println("Recovering pending orders from database to memory(matching engine)...");
 
         // 1. Select pending orders from DB
         List<Order> pendingOrders = orderRepository.findByStatusIn(
@@ -41,6 +41,7 @@ public class MatchingInit {
             System.out.println("recovering " + message);
 
             // Assign to partition
+            // Same hash logic as Kafka producer
             int partition = getKafkaPartition(message.getStockSymbol(), partitionCount);
 
             // Get corresponding MatchingEngine
@@ -48,14 +49,10 @@ public class MatchingInit {
 
             // Update in-memory order book
             System.out.println(partition + ": " + message);
-            if (message.getOrderType() == OrderType.BUY) {
-                engine.getOrCreateOrderBook(message.getStockSymbol()).getBuyOrders().offer(message);
-            } else if (message.getOrderType() == OrderType.SELL) {
-                engine.getOrCreateOrderBook(message.getStockSymbol()).getSellOrders().offer(message);
-            }
+            engine.initOrder(message);
         }
 
-        System.out.println("共恢复 " + pendingOrders.size() + " 个订单到撮合引擎");
+        System.out.println("Recovered totally " + pendingOrders.size() + " orders to matching engines.");
     }
 
     private int getKafkaPartition(String key, int partitionCount) {
