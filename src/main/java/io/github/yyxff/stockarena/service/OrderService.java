@@ -1,5 +1,6 @@
 package io.github.yyxff.stockarena.service;
 
+import io.github.yyxff.stockarena.config.KafkaTopics;
 import io.github.yyxff.stockarena.dto.OrderMessage;
 import io.github.yyxff.stockarena.dto.OrderRequest;
 import io.github.yyxff.stockarena.model.Order;
@@ -24,7 +25,7 @@ public class OrderService {
     @Autowired
     private KafkaTemplate kafkaTemplate;
 
-    private static final String ORDER_TOPIC = "orders";
+    private static final String ORDER_TOPIC = KafkaTopics.ORDERS;
 
     @Transactional
     public void placeBuyOrder(OrderRequest orderRequest) {

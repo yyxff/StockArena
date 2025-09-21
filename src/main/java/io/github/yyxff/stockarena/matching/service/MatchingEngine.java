@@ -2,25 +2,10 @@ package io.github.yyxff.stockarena.matching.service;
 
 import io.github.yyxff.stockarena.dto.OrderMessage;
 import io.github.yyxff.stockarena.matching.MatchingWorker;
-import io.github.yyxff.stockarena.matching.OrderBook;
-import io.github.yyxff.stockarena.matching.dto.MatchResult;
-import io.github.yyxff.stockarena.repository.AccountRepository;
-import io.github.yyxff.stockarena.repository.OrderRepository;
-import io.github.yyxff.stockarena.repository.PortfolioRepository;
-import io.github.yyxff.stockarena.service.AccountService;
-import io.github.yyxff.stockarena.service.OrderService;
-import io.github.yyxff.stockarena.service.PortfolioService;
-import jakarta.transaction.Transactional;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.context.annotation.Scope;
-import org.springframework.stereotype.Component;
+import io.github.yyxff.stockarena.matching.producer.TradeProducer;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
 public class MatchingEngine {
 
@@ -35,18 +20,16 @@ public class MatchingEngine {
      */
     private final List<MatchingWorker> workers;
 
-    private final PersistenceService persistenceService;
 
-
-    public MatchingEngine(String engineName, int workerCount, PersistenceService persistenceService) {
+    public MatchingEngine(String engineName, int workerCount, PersistenceService persistenceService, TradeProducer tradeProducer) {
         this.engineName = engineName;
         this.workerCount = workerCount;
         this.workers = new ArrayList<>();
-        this.persistenceService = persistenceService;
         for (int i = 0; i < workerCount; i++) {
             MatchingWorker worker = new MatchingWorker(
                     "MatchingWorker-" + engineName + "-" + i
-                    ,persistenceService);
+                    ,persistenceService
+                    ,tradeProducer);
             workers.add(worker);
             new Thread(worker).start();
         }

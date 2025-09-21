@@ -1,7 +1,10 @@
 package io.github.yyxff.stockarena.matching;
 
 import io.github.yyxff.stockarena.dto.OrderMessage;
+import io.github.yyxff.stockarena.dto.TradeMessage;
+import io.github.yyxff.stockarena.dto.TradeWithChanges;
 import io.github.yyxff.stockarena.matching.dto.MatchResult;
+import io.github.yyxff.stockarena.matching.producer.TradeProducer;
 import io.github.yyxff.stockarena.matching.service.PersistenceService;
 
 import java.util.HashMap;
@@ -12,13 +15,19 @@ import java.util.concurrent.LinkedBlockingQueue;
 public class MatchingWorker implements Runnable {
 
     private final String name;
+
     private final BlockingQueue<OrderMessage> queue = new LinkedBlockingQueue<>();
+
     private final Map<String, OrderBook> books = new HashMap<>();
+
     private final PersistenceService persistenceService;
 
-    public MatchingWorker(String name, PersistenceService persistenceService) {
+    private final TradeProducer tradeProducer;
+
+    public MatchingWorker(String name, PersistenceService persistenceService, TradeProducer tradeProducer) {
         this.name = name;
         this.persistenceService = persistenceService;
+        this.tradeProducer = tradeProducer;
     }
 
     public void submit(OrderMessage orderMessage) {
@@ -38,6 +47,13 @@ public class MatchingWorker implements Runnable {
         }
     }
 
+    private void sendAllTradesToMQ(MatchResult result) {
+        for (TradeWithChanges tradeWithChanges : result.getTradeWithChanges()) {
+            TradeMessage trade = tradeWithChanges.getTrade();
+            tradeProducer.sendTrade(trade);
+        }
+    }
+
     @Override
     public void run() {
         while (true) {
@@ -47,7 +63,10 @@ public class MatchingWorker implements Runnable {
                 // 2. Match order
                 OrderBook book = books.computeIfAbsent(orderMessage.getStockSymbol(), k -> new OrderBook(k));
                 MatchResult result = book.match(orderMessage);
-                // 3. Async Persist match result
+                // 3. Send trades to MQ
+                sendAllTradesToMQ(result);
+                // 4. Async Persist match result
+                // TODO: send it to MQ too then save it
                 persistenceService.saveMatchResult(result);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
