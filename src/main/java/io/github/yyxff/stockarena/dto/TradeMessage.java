@@ -21,5 +21,5 @@ public class TradeMessage {
     private long sellerAccountId;
     private long buyOrderId;
     private long sellOrderId;
-    private LocalDateTime createdAt;
+    private long createdAt;
 }

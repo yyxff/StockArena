@@ -73,7 +73,7 @@ public class OrderBook {
                 trade.setSellerAccountId(bestSellOrder.getAccountId());
                 trade.setBuyOrderId(buyOrder.getOrderId());
                 trade.setSellOrderId(bestSellOrder.getOrderId());
-                trade.setCreatedAt(java.time.LocalDateTime.now());
+                trade.setCreatedAt(System.currentTimeMillis());
                 // Add trade to result
                 tradeWithChanges.setTrade(trade);
 
@@ -155,7 +155,7 @@ public class OrderBook {
                 trade.setSellerAccountId(sellOrder.getAccountId());
                 trade.setBuyOrderId(bestBuyOrder.getOrderId());
                 trade.setSellOrderId(sellOrder.getOrderId());
-                trade.setCreatedAt(java.time.LocalDateTime.now());
+                trade.setCreatedAt(System.currentTimeMillis());
                 // Add trade to result
                 tradeWithChanges.setTrade(trade);
 

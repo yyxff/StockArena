@@ -33,7 +33,5 @@ public class Trade {
     private long sellOrderId;
 
     @Column(name = "created_at")
-    private LocalDateTime createdAt = LocalDateTime.now();
-    
-
+    private long createdAt = System.currentTimeMillis();
 }

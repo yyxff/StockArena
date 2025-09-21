@@ -100,7 +100,7 @@ public class PersistenceService {
         t.setStockSymbol(msg.getStockSymbol());
         t.setPrice(msg.getPrice());
         t.setQuantity(msg.getQuantity());
-        t.setCreatedAt(LocalDateTime.now());
+        t.setCreatedAt(msg.getCreatedAt());
         return t;
     }
 
