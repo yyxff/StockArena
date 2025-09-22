@@ -1,46 +1,60 @@
 <template>
   <div class="order-form-card-flex">
     <div
-        class="order-side-card buy"
-        :class="{ expanded: expanded === 'buy' }"
-        @click="expand('buy')"
+      class="order-side-card buy"
+      :class="{ expanded: expanded === 'buy' }"
+      @click="expand('buy')"
     >
       <div class="side-title">Buy</div>
-      <template v-if="expanded === 'buy'">
-        <div class="order-input-group">
-          <label>Quantity</label>
-          <input type="number" v-model.number="quantity" min="1" placeholder="Enter quantity" />
+      <transition
+        @enter="onEnter"
+        @after-enter="onAfterEnter"
+        @leave="onLeave"
+        @after-leave="onAfterLeave"
+      >
+        <div class="expand-content" v-if="expanded === 'buy'" ref="buyContent" @click.stop>
+          <div class="order-input-group">
+            <label>Quantity</label>
+            <input type="number" v-model.number="quantity" min="1" placeholder="Enter quantity" />
+          </div>
+          <div class="order-input-group">
+            <label>Price</label>
+            <input type="number" v-model.number="price" min="0" step="0.01" placeholder="Enter price" />
+          </div>
+          <button class="submit-btn buy" @click.stop="submitOrder('buy')">Place Buy Order</button>
         </div>
-        <div class="order-input-group">
-          <label>Price</label>
-          <input type="number" v-model.number="price" min="0" step="0.01" placeholder="Enter price" />
-        </div>
-        <button class="submit-btn buy" @click.stop="submitOrder('buy')">Place Buy Order</button>
-      </template>
+      </transition>
     </div>
     <div
-        class="order-side-card sell"
-        :class="{ expanded: expanded === 'sell' }"
-        @click="expand('sell')"
+      class="order-side-card sell"
+      :class="{ expanded: expanded === 'sell' }"
+      @click="expand('sell')"
     >
       <div class="side-title">Sell</div>
-      <template v-if="expanded === 'sell'">
-        <div class="order-input-group">
-          <label>Quantity</label>
-          <input type="number" v-model.number="quantity" min="1" placeholder="Enter quantity" />
+      <transition
+        @enter="onEnter"
+        @after-enter="onAfterEnter"
+        @leave="onLeave"
+        @after-leave="onAfterLeave"
+      >
+        <div class="expand-content" v-if="expanded === 'sell'" ref="sellContent" @click.stop>
+          <div class="order-input-group">
+            <label>Quantity</label>
+            <input type="number" v-model.number="quantity" min="1" placeholder="Enter quantity" />
+          </div>
+          <div class="order-input-group">
+            <label>Price</label>
+            <input type="number" v-model.number="price" min="0" step="0.01" placeholder="Enter price" />
+          </div>
+          <button class="submit-btn sell" @click.stop="submitOrder('sell')">Place Sell Order</button>
         </div>
-        <div class="order-input-group">
-          <label>Price</label>
-          <input type="number" v-model.number="price" min="0" step="0.01" placeholder="Enter price" />
-        </div>
-        <button class="submit-btn sell" @click.stop="submitOrder('sell')">Place Sell Order</button>
-      </template>
+      </transition>
     </div>
   </div>
 </template>
 
 <script lang="ts">
-import { defineComponent, ref } from 'vue'
+import { defineComponent, ref, nextTick } from 'vue'
 
 export default defineComponent({
   emits: ['submit'],
@@ -49,16 +63,58 @@ export default defineComponent({
     const quantity = ref<number>(1)
     const price = ref<number>(0)
     const expand = (side: 'buy' | 'sell') => {
-      expanded.value = expanded.value === side ? null : side
+      if (expanded.value === side) {
+        expanded.value = null
+      } else {
+        // 切换 buy/sell 时只变宽度不变高度
+        if (expanded.value) {
+          // 先收起当前展开的
+          expanded.value = null
+          nextTick(() => {
+            expanded.value = side
+          })
+        } else {
+          expanded.value = side
+        }
+      }
     }
     const submitOrder = (type: 'buy' | 'sell') => {
       if (quantity.value > 0 && price.value > 0) {
         emit('submit', { type, quantity: quantity.value, price: price.value })
       }
     }
-    return { expanded, quantity, price, expand, submitOrder }
+    // 纵向高度和透明度动画同时进行，但切换 buy/sell 时只变宽度
+    const onEnter = (el: HTMLElement) => {
+      el.style.height = '0'
+      el.style.opacity = '0'
+      el.style.overflow = 'hidden'
+      void el.offsetHeight
+      el.style.transition = 'height 0.35s cubic-bezier(.4,0,.2,1), opacity 0.35s cubic-bezier(.4,0,.2,1)'
+      el.style.height = el.scrollHeight + 'px'
+      el.style.opacity = '1'
+    }
+    const onAfterEnter = (el: HTMLElement) => {
+      el.style.height = 'auto'
+      el.style.transition = ''
+      el.style.overflow = ''
+    }
+    const onLeave = (el: HTMLElement) => {
+      el.style.height = el.scrollHeight + 'px'
+      el.style.opacity = '1'
+      el.style.overflow = 'hidden'
+      void el.offsetHeight
+      el.style.transition = 'height 0.35s cubic-bezier(.4,0,.2,1), opacity 0.35s cubic-bezier(.4,0,.2,1)'
+      el.style.height = '0'
+      el.style.opacity = '0'
+    }
+    const onAfterLeave = (el: HTMLElement) => {
+      el.style.transition = ''
+      el.style.overflow = ''
+    }
+    return { expanded, quantity, price, expand, submitOrder, onEnter, onAfterEnter, onLeave, onAfterLeave }
   }
 })
+
 </script>
 
 <style scoped>
@@ -162,5 +218,11 @@ export default defineComponent({
 }
 .submit-btn.sell:hover {
   background: linear-gradient(90deg, #c0392b 0%, #e74c3c 100%);
+}
+.expand-content {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 </style>
