@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.yyxff.stockarena.dto.KLine;
 import io.github.yyxff.stockarena.dto.TradeMessage;
+import io.github.yyxff.stockarena.websocket.KlineWebSocketHandler;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -19,11 +20,13 @@ public class KLineService {
     private final RedisTemplate<String, String> redisTemplate;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final ConcurrentHashMap<String, KLine> currentKLines = new ConcurrentHashMap<>();
+    private final KlineWebSocketHandler klineWebSocketHandler;
 
 
     @Autowired
-    public KLineService(RedisTemplate<String, String> redisTemplate) {
+    public KLineService(RedisTemplate<String, String> redisTemplate, KlineWebSocketHandler klineWebSocketHandler) {
         this.redisTemplate = redisTemplate;
+        this.klineWebSocketHandler = klineWebSocketHandler;
     }
 
     public void updateCurrentKLine(TradeMessage trade) {
@@ -54,6 +57,7 @@ public class KLineService {
             String key = "kline:" + entry.getKey() + ":1m";
             String json = objectMapper.writeValueAsString(kline);
             redisTemplate.opsForZSet().add(key, json, kline.getTimestamp());
+            klineWebSocketHandler.sendKline(entry.getKey(), json);
             System.out.println("Flushed KLine to Redis: " + json);
         }
     }

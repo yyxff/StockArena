@@ -3,20 +3,29 @@
 </template>
 
 <script lang="ts">
-import { defineComponent, ref, watch, onMounted } from 'vue'
+import { defineComponent, ref, watch, onMounted, onUnmounted } from 'vue'
 import * as echarts from 'echarts'
-import { getKLine } from '../api'
 import type { KLineData } from '../types'
 
 export default defineComponent({
   props: {
-    symbol: { type: String, required: true }
+    symbol: { type: String, required: false, default: 'AAPL' }
   },
   setup(props) {
     const chartRef = ref<HTMLDivElement | null>(null)
     let chartInstance: echarts.ECharts | null = null
+    let ws: WebSocket | null = null
+    const klineData = ref<KLineData[]>([])
 
-    const renderChart = (data: KLineData[]) => {
+    const convertKLine = (k: any) => ({
+      date: k.date || (k.timestamp ? new Date(k.timestamp).toISOString().slice(0, 16).replace('T', ' ') : ''),
+      open: k.open,
+      close: k.close,
+      low: k.low,
+      high: k.high
+    })
+
+    const renderChart = (data: any[]) => {
       const option: echarts.EChartsOption = {
         title: { text: props.symbol },
         tooltip: { trigger: 'axis' },
@@ -30,15 +39,47 @@ export default defineComponent({
       chartInstance?.setOption(option)
     }
 
-    const fetchData = async () => {
-      const res = await getKLine(props.symbol)
-      renderChart(res.data)
+    const connectWS = () => {
+      if (ws) ws.close()
+      ws = new WebSocket('ws://localhost:8080/ws/kline')
+      ws.onopen = () => {
+        ws?.send(JSON.stringify({ action: 'subscribe', symbol: props.symbol }))
+      }
+      ws.onmessage = (event) => {
+        console.log('WS raw:', event.data); // debug
+        try {
+          let msg = JSON.parse(event.data)
+          if (typeof msg === 'string') {
+            msg = JSON.parse(msg)
+          }
+          if (Array.isArray(msg)) {
+            klineData.value = msg.map(convertKLine)
+            renderChart(klineData.value)
+          } else if (msg && (msg.date || msg.timestamp)) {
+            // 增量推送
+            const k = convertKLine(msg)
+            const last = klineData.value[klineData.value.length - 1]
+            if (last && last.date === k.date) {
+              klineData.value[klineData.value.length - 1] = k
+            } else {
+              klineData.value.push(k)
+            }
+            renderChart(klineData.value)
+          }
+        } catch (e) { console.error('WS parse error', e) }
+      }
+      ws.onclose = () => { ws = null }
     }
 
-    watch(() => props.symbol, fetchData)
+    watch(() => props.symbol, () => {
+      connectWS()
+    })
     onMounted(() => {
       if (chartRef.value) chartInstance = echarts.init(chartRef.value)
-      fetchData()
+      connectWS()
+    })
+    onUnmounted(() => {
+      if (ws) ws.close()
     })
 
     return { chartRef }
