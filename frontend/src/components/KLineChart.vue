@@ -333,7 +333,15 @@ export default defineComponent({
         klineData.value = [...mockKLineData]
         renderChart(aggregateKLine(klineData.value, interval.value))
       } else if (mode === 'real') {
-        // 连接 WebSocket
+        // 保留 mock 数据作为历史数据，不清空
+        // klineData.value = [] // 删除这行，保留历史数据
+
+        // 如果当前没有数据，则使用 mock 数据作为基础
+        if (klineData.value.length === 0) {
+          klineData.value = [...mockKLineData]
+        }
+
+        // 连接 WebSocket 开始接收实时数据
         connectWebSocket()
       }
     }
@@ -343,7 +351,7 @@ export default defineComponent({
       if (ws) ws.close()
 
       wsStatus.value = 'connecting'
-      const wsUrl = `ws://localhost:8080/ws/kline/${props.symbol}`
+      const wsUrl = `ws://localhost:8080/ws/kline`
 
       try {
         ws = new WebSocket(wsUrl)
@@ -351,23 +359,37 @@ export default defineComponent({
         ws.onopen = () => {
           console.log('WebSocket connected to:', wsUrl)
           wsStatus.value = 'connected'
+          // 连接成功后自动订阅当前股票
+          subscribeToSymbol(props.symbol)
         }
 
         ws.onmessage = (event) => {
           try {
-            const data = JSON.parse(event.data)
-            console.log('Received WebSocket data:', data)
+            const message = JSON.parse(event.data)
+            console.log('Received WebSocket message:', message)
 
-            // 如果接收到的是单条 K线数据
-            if (data.stock && data.kline) {
-              const kline = JSON.parse(data.kline)
-              updateKLineData(kline)
-            } else if (data.open !== undefined && data.close !== undefined) {
-              // 直接是 K线数据
-              updateKLineData(data)
+            switch (message.type) {
+              case 'connection':
+                console.log('Connection confirmed:', message.message)
+                break
+              case 'subscribe':
+                console.log('Subscription confirmed for:', message.symbol)
+                break
+              case 'unsubscribe':
+                console.log('Unsubscription confirmed for:', message.symbol)
+                break
+              case 'kline':
+                handleKlineData(message)
+                break
+              case 'error':
+                console.error('WebSocket error:', message.message)
+                break
+              case 'pong':
+                console.log('Pong received')
+                break
             }
           } catch (e) {
-            console.error('WebSocket data parse error:', e)
+            console.error('WebSocket message parse error:', e)
           }
         }
 
@@ -386,19 +408,130 @@ export default defineComponent({
       }
     }
 
-    // 更新 K线数据
-    const updateKLineData = (newKLine: any) => {
-      // 添加到数据数组
-      klineData.value.push(newKLine)
+    // 订阅股票K线数据
+    const subscribeToSymbol = (symbol: string) => {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        const message = {
+          action: 'subscribe',
+          symbol: symbol
+        }
+        ws.send(JSON.stringify(message))
+        console.log('Subscribing to:', symbol)
+      }
+    }
 
-      // 保持最近 120 根 K线
-      if (klineData.value.length > 120) {
-        klineData.value.shift()
+    // 取消订阅股票K线数据
+    const unsubscribeFromSymbol = (symbol: string) => {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        const message = {
+          action: 'unsubscribe',
+          symbol: symbol
+        }
+        ws.send(JSON.stringify(message))
+        console.log('Unsubscribing from:', symbol)
+      }
+    }
+
+    // 处理K线数据
+    const handleKlineData = (message: any) => {
+      if (message.symbol === props.symbol) {
+        try {
+          const newKlineData = typeof message.data === 'string'
+            ? JSON.parse(message.data)
+            : message.data
+
+          // 确保有timestamp
+          if (!newKlineData.timestamp) {
+            console.warn('Received kline data without timestamp, skipping')
+            return
+          }
+
+          updateOrMergeKLineData(newKlineData)
+        } catch (e) {
+          console.error('Error parsing kline data:', e)
+        }
+      }
+    }
+
+    // 更新或合并K线数据（处理timestamp去重和实时更新）
+    const updateOrMergeKLineData = (newKLine: any) => {
+      // 转换后端BigDecimal数据为前端数字类型
+      const normalizedKLine = {
+        open: typeof newKLine.open === 'object' ? parseFloat(newKLine.open) : newKLine.open,
+        close: typeof newKLine.close === 'object' ? parseFloat(newKLine.close) : newKLine.close,
+        high: typeof newKLine.high === 'object' ? parseFloat(newKLine.high) : newKLine.high,
+        low: typeof newKLine.low === 'object' ? parseFloat(newKLine.low) : newKLine.low,
+        volume: newKLine.volume,
+        timestamp: newKLine.timestamp
+      }
+
+      const newTimestamp = normalizedKLine.timestamp
+
+      // 将timestamp标准化到分钟级别（这样同一分钟内的数据会有相同的timestamp）
+      const minuteTimestamp = Math.floor(newTimestamp / 60000) * 60000
+
+      // 查找是否已存在相同分钟的K线
+      const existingIndex = klineData.value.findIndex(k => {
+        const kMinuteTimestamp = Math.floor(k.timestamp / 60000) * 60000
+        return kMinuteTimestamp === minuteTimestamp
+      })
+
+      if (existingIndex >= 0) {
+        // 更新现有K线（实时更新当前分钟的蜡烛图）
+        // 保持原有的open不变，更新其他字段
+        const existingKLine = klineData.value[existingIndex]
+        klineData.value[existingIndex] = {
+          ...normalizedKLine,
+          timestamp: minuteTimestamp,
+          open: existingKLine.open, // 保持分钟开始时的开盘价
+          // high和low需要与现有数据比较
+          high: Math.max(existingKLine.high, normalizedKLine.high),
+          low: Math.min(existingKLine.low, normalizedKLine.low),
+          // close使用最新价格
+          close: normalizedKLine.close,
+          // 累加成交量（如果需要的话）
+          volume: existingKLine.volume + normalizedKLine.volume
+        }
+        console.log('Updated existing kline at minute:', new Date(minuteTimestamp).toLocaleTimeString(),
+                   'close:', normalizedKLine.close)
+      } else {
+        // 添加新的K线
+        const newKLineWithMinuteTimestamp = {
+          ...normalizedKLine,
+          timestamp: minuteTimestamp
+        }
+        klineData.value.push(newKLineWithMinuteTimestamp)
+
+        // 按timestamp排序
+        klineData.value.sort((a, b) => a.timestamp - b.timestamp)
+
+        // 保持最近120根K线
+        if (klineData.value.length > 120) {
+          klineData.value = klineData.value.slice(-120)
+        }
+
+        console.log('Added new kline at minute:', new Date(minuteTimestamp).toLocaleTimeString(),
+                   'open:', normalizedKLine.open, 'close:', normalizedKLine.close)
       }
 
       // 重新渲染图表
       renderChart(aggregateKLine(klineData.value, interval.value))
     }
+
+    // 监听symbol变化，切换订阅
+    watch(() => props.symbol, (newSymbol, oldSymbol) => {
+      if (currentMode.value === 'real' && ws && ws.readyState === WebSocket.OPEN) {
+        if (oldSymbol) {
+          unsubscribeFromSymbol(oldSymbol)
+        }
+        if (newSymbol) {
+          subscribeToSymbol(newSymbol)
+          // 清空当前数据，准备接收新股票的数据
+          klineData.value = []
+        }
+      }
+    })
+
 
     return {
       chartRef,
