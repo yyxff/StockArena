@@ -24,6 +24,8 @@ public class MatchingWorker implements Runnable {
 
     private final TradeProducer tradeProducer;
 
+    private final OrderDeduplicator deduplicator = new OrderDeduplicator(1000, 60 * 1000, 0.01);
+
     public MatchingWorker(String name, PersistenceService persistenceService, TradeProducer tradeProducer) {
         this.name = name;
         this.persistenceService = persistenceService;
@@ -31,6 +33,11 @@ public class MatchingWorker implements Runnable {
     }
 
     public void submit(OrderMessage orderMessage) {
+        if (deduplicator.isDuplicate(orderMessage.getOrderId())) {
+            System.out.println("Duplicate order: " + orderMessage.getOrderId());
+            return;
+        }
+        deduplicator.markActive(orderMessage.getOrderId());
         queue.offer(orderMessage);
     }
 
@@ -60,12 +67,19 @@ public class MatchingWorker implements Runnable {
             try{
                 // 1. Take order message from queue
                 OrderMessage orderMessage = queue.take();
+
                 // 2. Match order
                 OrderBook book = books.computeIfAbsent(orderMessage.getStockSymbol(), k -> new OrderBook(k));
                 MatchResult result = book.match(orderMessage);
-                // 3. Send trades to MQ
+
+                // 3. Mark completed orders
+                deduplicator.markCompleted(result.getFilledOrders());
+
+                // 4. Send trades to MQ
                 sendAllTradesToMQ(result);
-                // 4. Async Persist match result
+
+                // 5. Async Persist match result
+
                 // TODO: send it to MQ too then save it
                 persistenceService.saveMatchResult(result);
             } catch (InterruptedException e) {

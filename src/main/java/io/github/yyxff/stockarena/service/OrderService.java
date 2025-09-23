@@ -1,5 +1,6 @@
 package io.github.yyxff.stockarena.service;
 
+import io.github.yyxff.stockarena.common.IdGenerator;
 import io.github.yyxff.stockarena.config.KafkaTopics;
 import io.github.yyxff.stockarena.dto.OrderMessage;
 import io.github.yyxff.stockarena.dto.OrderRequest;
@@ -24,6 +25,8 @@ public class OrderService {
     private PortfolioService portfolioService;
     @Autowired
     private KafkaTemplate kafkaTemplate;
+    @Autowired
+    private IdGenerator idGenerator;
 
     private static final String ORDER_TOPIC = KafkaTopics.ORDERS;
 
@@ -94,6 +97,7 @@ public class OrderService {
 
     private Order saveNewOrder(OrderRequest orderRequest) {
         Order order = new Order();
+        order.setId(idGenerator.nextId());
         order.setAccountId(orderRequest.getAccountId());
         order.setStockSymbol(orderRequest.getStockSymbol());
         order.setPrice(orderRequest.getPrice());

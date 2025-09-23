@@ -1,5 +1,6 @@
 package io.github.yyxff.stockarena.init;
 
+import io.github.yyxff.stockarena.common.IdGenerator;
 import io.github.yyxff.stockarena.model.*;
 import io.github.yyxff.stockarena.repository.AccountRepository;
 import io.github.yyxff.stockarena.repository.OrderRepository;
@@ -23,6 +24,9 @@ public class InitCompanyData {
 
     @Autowired
     private OrderRepository orderRepository;
+
+    @Autowired
+    private IdGenerator idGenerator;
 
     @PostConstruct
     @Transactional
@@ -62,6 +66,7 @@ public class InitCompanyData {
             portfolioRepository.save(portfolio);
 
             Order order = new Order();
+            order.setId(idGenerator.nextId());
             order.setAccountId(acc.getId());
             order.setStockSymbol(stockSymbol);
             order.setOrderType(OrderType.SELL);
