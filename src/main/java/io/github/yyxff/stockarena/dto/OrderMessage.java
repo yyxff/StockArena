@@ -1,5 +1,6 @@
 package io.github.yyxff.stockarena.dto;
 
+import io.github.yyxff.stockarena.model.OrderStatus;
 import io.github.yyxff.stockarena.model.OrderType;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -17,5 +18,6 @@ public class OrderMessage {
     private int remainingQuantity;
     private OrderType orderType;
     private BigDecimal price;
+    private OrderStatus orderStatus;
     private LocalDateTime createdAt;
 }

@@ -8,6 +8,7 @@ import io.github.yyxff.stockarena.model.Order;
 import io.github.yyxff.stockarena.model.OrderStatus;
 import io.github.yyxff.stockarena.repository.OrderRepository;
 import jakarta.transaction.Transactional;
+import org.aspectj.weaver.ast.Or;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
@@ -39,11 +40,11 @@ public class OrderService {
         BigDecimal totalPrice = orderRequest.getPrice().multiply(BigDecimal.valueOf(orderRequest.getQuantity()));
         accountService.freezeBalance(orderRequest.getAccountId(), totalPrice);
 
-        // 3. Save new order
-        Order order = saveNewOrder(orderRequest);
+        // 3. Form new order msg
+        OrderMessage orderMsg = formNewOrderMsg(orderRequest);
 
         // 4. Send order to MQ
-        sendOrderToMQ(order);
+        sendOrderToMQ(orderMsg);
 
         return; // Success
     }
@@ -56,11 +57,12 @@ public class OrderService {
         // 2. Freeze shares
         portfolioService.freezeShares(orderRequest.getAccountId(), orderRequest.getStockSymbol(), orderRequest.getQuantity());
 
-        // 3. Save new order
-        Order order = saveNewOrder(orderRequest);
+        // 3. Form new order msg
+        OrderMessage orderMsg = formNewOrderMsg(orderRequest);
 
         // 4. Send order to MQ
-        sendOrderToMQ(order);
+        sendOrderToMQ(orderMsg);
+
         return; // Success
     }
 
@@ -95,55 +97,21 @@ public class OrderService {
         }
     }
 
-    private Order saveNewOrder(OrderRequest orderRequest) {
-        Order order = new Order();
-        order.setId(idGenerator.nextId());
-        order.setAccountId(orderRequest.getAccountId());
-        order.setStockSymbol(orderRequest.getStockSymbol());
-        order.setPrice(orderRequest.getPrice());
-        order.setTotalQuantity(orderRequest.getQuantity());
-        order.setRemainingQuantity(orderRequest.getQuantity());
-        order.setOrderType(orderRequest.getOrderType());
-        order.setStatus(OrderStatus.OPEN);
-        return orderRepository.save(order);
+    private OrderMessage formNewOrderMsg(OrderRequest orderRequest) {
+        OrderMessage orderMsg = new OrderMessage();
+        orderMsg.setOrderId(idGenerator.nextId());
+        orderMsg.setAccountId(orderRequest.getAccountId());
+        orderMsg.setStockSymbol(orderRequest.getStockSymbol());
+        orderMsg.setPrice(orderRequest.getPrice());
+        orderMsg.setTotalQuantity(orderRequest.getQuantity());
+        orderMsg.setRemainingQuantity(orderRequest.getQuantity());
+        orderMsg.setOrderType(orderRequest.getOrderType());
+        orderMsg.setOrderStatus(OrderStatus.OPEN);
+        orderMsg.setCreatedAt(java.time.LocalDateTime.now());
+        return orderMsg;
     }
 
-    private void sendOrderToMQ(Order order) {
-        // 1. Construct OrderMessage
-        OrderMessage msg = new OrderMessage();
-        msg.setOrderId(order.getId());
-        msg.setAccountId(order.getAccountId());
-        msg.setStockSymbol(order.getStockSymbol());
-        msg.setOrderType(order.getOrderType());
-        msg.setPrice(order.getPrice());
-        msg.setTotalQuantity(order.getTotalQuantity());
-        msg.setRemainingQuantity(order.getRemainingQuantity());
-        msg.setCreatedAt(order.getCreatedAt());
-
-        // 2. Send to MQ
-        kafkaTemplate.send(ORDER_TOPIC, order.getStockSymbol(), msg);
-    }
-
-    @Transactional
-    public void matchOrder(Order buyOrder, Order sellOrder) {
-        int sellQuantity = sellOrder.getRemainingQuantity();
-        int buyQuantity = buyOrder.getRemainingQuantity();
-        int matchedQuantity = Math.min(sellQuantity, buyQuantity);
-
-        // Update order statuses and remaining quantities
-        sellOrder.setRemainingQuantity(sellQuantity - matchedQuantity);
-        buyOrder.setRemainingQuantity(buyQuantity - matchedQuantity);
-        if (sellOrder.getRemainingQuantity() == 0) {
-            sellOrder.setStatus(OrderStatus.FILLED);
-        } else {
-            sellOrder.setStatus(OrderStatus.PARTIALLY_FILLED);
-        }
-        if (buyOrder.getRemainingQuantity() == 0) {
-            buyOrder.setStatus(OrderStatus.FILLED);
-        } else {
-            buyOrder.setStatus(OrderStatus.PARTIALLY_FILLED);
-        }
-        orderRepository.save(sellOrder);
-        orderRepository.save(buyOrder);
+    private void sendOrderToMQ(OrderMessage orderMsg) {
+        kafkaTemplate.send(ORDER_TOPIC, orderMsg.getStockSymbol(), orderMsg);
     }
 }
