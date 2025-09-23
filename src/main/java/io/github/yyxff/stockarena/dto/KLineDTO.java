@@ -5,7 +5,7 @@ import lombok.Data;
 import java.math.BigDecimal;
 
 @Data
-public class KLine {
+public class KLineDTO {
     private BigDecimal open;
     private BigDecimal high;
     private BigDecimal low;
