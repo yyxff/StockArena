@@ -2,9 +2,10 @@
   <div>
     <div class="interval-bar">
       <button
-        v-for="(item, idx) in intervals"
+        v-for="item in intervals"
         :key="item.value"
-        :class="['interval-btn', { active: interval === item.value }]"
+        class="interval-btn"
+        :class="{ active: interval === item.value }"
         @click="setInterval(item.value)"
         ref="intervalBtns"
       >
@@ -47,17 +48,15 @@ const intervals = [
 ]
 
 // mock 数据，120 根，open/close 连续，涨跌交替，覆盖2小时
+type KLine = { open: number; close: number; high: number; low: number; volume: number; timestamp: number }
 const now = Date.now()
-const mockKLineData = []
+const mockKLineData: KLine[] = []
 let lastClose = 100
 for (let i = 0; i < 120; i++) {
-  // 随机决定涨跌
   const isUp = Math.random() > 0.45
-  // 波动幅度
   const change = +(Math.random() * 1.5 + 0.1).toFixed(2)
   const open = lastClose
   const close = +(isUp ? open + change : open - change).toFixed(2)
-  // high/low 在 open/close 附近波动
   const high = +(Math.max(open, close) + Math.random() * 0.5).toFixed(2)
   const low = +(Math.min(open, close) - Math.random() * 0.5).toFixed(2)
   const volume = +(Math.random() * 1000 + 1000).toFixed(0)
@@ -74,12 +73,28 @@ for (let i = 0; i < 120; i++) {
 
 export default defineComponent({
   props: {
-    symbol: { type: String, required: false, default: 'AAPL' }
+    symbol: { type: String, required: false, default: 'AAPL' },
+    data: { type: Array, required: false, default: undefined }
   },
   setup(props) {
     const chartRef = ref<HTMLDivElement | null>(null)
     let chartInstance: echarts.ECharts | null = null
-    const klineData = ref<any[]>([...mockKLineData])
+    // 优先用 props.data，否则 fallback 到 mockKLineData
+    const klineData = ref<any[]>(props.data && props.data.length ? props.data : [...mockKLineData])
+    // 监听 props.data 变化，动态更新 klineData
+    watch(() => props.data, (val) => {
+      if (Array.isArray(val) && val.length) {
+        klineData.value = val
+        if (chartInstance) {
+          try {
+            renderChart(aggregateKLine(klineData.value, interval.value))
+          } catch (e) {
+            console.error('KLineChart renderChart error:', e)
+          }
+        }
+      }
+    }, { immediate: true })
+
     const interval = ref('1m')
     const intervalBtns = ref([])
     const sliderStyle = ref({ left: '0px', width: '0px' })
@@ -176,95 +191,99 @@ export default defineComponent({
       return result
     }
     const renderChart = (data: any[]) => {
-      if (!data.length) return
-      // 调试输出每根K线的涨跌
-      data.forEach((d, i) => {
-        const dir = d.close > d.open ? 'UP' : (d.close < d.open ? 'DOWN' : 'FLAT')
-        // eslint-disable-next-line
-        console.log(`Candle #${i}: open=${d.open}, close=${d.close}, ${dir}`)
-      })
-      // 计算最高价和最低价
-      let max = Math.max(...data.map(d => d.high))
-      let min = Math.min(...data.map(d => d.low))
-      const padding = (max - min) * 0.01
-      max += padding
-      min -= padding
-      const xData = data.map(d => new Date(d.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))
-      let option: echarts.EChartsOption
-      if (chartType.value === 'candle') {
-        option = {
-          title: { text: props.symbol },
-          tooltip: { trigger: 'axis' },
-          xAxis: { type: 'category', data: xData },
-          yAxis: {
-            type: 'value',
-            min,
-            max,
-            splitNumber: 5,
-            axisLabel: {
-              show: true,
-              color: '#bfc9d4',
-              formatter: function(value: number) {
-                if (Math.abs(value - min) < 1e-6 || Math.abs(value - max) < 1e-6) return '';
-                return value;
+      if (!Array.isArray(data) || !data.length || !chartInstance) return
+      try {
+        // 调试输出每根K线的涨跌
+        data.forEach((d, i) => {
+          const dir = d.close > d.open ? 'UP' : (d.close < d.open ? 'DOWN' : 'FLAT')
+          // eslint-disable-next-line
+          console.log(`Candle #${i}: open=${d.open}, close=${d.close}, ${dir}`)
+        })
+        // 计算最高价和最低价
+        let max = Math.max(...data.map(d => d.high))
+        let min = Math.min(...data.map(d => d.low))
+        const padding = (max - min) * 0.01
+        max += padding
+        min -= padding
+        const xData = data.map(d => new Date(d.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))
+        let option: echarts.EChartsOption
+        if (chartType.value === 'candle') {
+          option = {
+            title: { text: props.symbol },
+            tooltip: { trigger: 'axis' },
+            xAxis: { type: 'category', data: xData },
+            yAxis: {
+              type: 'value',
+              min,
+              max,
+              splitNumber: 5,
+              axisLabel: {
+                show: true,
+                color: '#bfc9d4',
+                formatter: function(value: number) {
+                  if (Math.abs(value - min) < 1e-6 || Math.abs(value - max) < 1e-6) return ' ';
+                  return value.toString();
+                }
+              },
+              splitLine: { show: true, lineStyle: { color: '#fff', opacity: 0.18, width: 1, type: 'solid' } },
+              axisTick: { show: false },
+              axisLine: { show: false }
+            },
+            series: [{
+              type: 'candlestick',
+              data: data.map(d => [d.open, d.close, d.low, d.high]),
+              barWidth: '99%',
+              itemStyle: {
+                color: '#3fc371',
+                borderColor: '#3fc371',
+                color0: '#f36c6c',
+                borderColor0: '#f36c6c'
+              }
+            }]
+          }
+        } else {
+          option = {
+            title: { text: props.symbol },
+            tooltip: {
+              trigger: 'axis',
+              formatter: (params: any) => {
+                const d = data[params[0].dataIndex]
+                return `时间: ${d.date || xData[params[0].dataIndex]}<br />`
+                  + `Open: ${d.open}<br />High: ${d.high}<br />Low: ${d.low}<br />Close: ${d.close}<br />Volume: ${d.volume}`
               }
             },
-            splitLine: { show: true, lineStyle: { color: '#fff', opacity: 0.18, width: 1, type: 'solid' } },
-            axisTick: { show: false },
-            axisLine: { show: false }
-          },
-          series: [{
-            type: 'candlestick',
-            data: data.map(d => [d.open, d.close, d.low, d.high]),
-            barWidth: '99%',
-            itemStyle: {
-              color: '#3fc371',
-              borderColor: '#3fc371',
-              color0: '#f36c6c',
-              borderColor0: '#f36c6c'
-            }
-          }]
-        }
-      } else {
-        option = {
-          title: { text: props.symbol },
-          tooltip: {
-            trigger: 'axis',
-            formatter: (params: any) => {
-              const d = data[params[0].dataIndex]
-              return `时间: ${d.date || xData[params[0].dataIndex]}<br />`
-                + `Open: ${d.open}<br />High: ${d.high}<br />Low: ${d.low}<br />Close: ${d.close}<br />Volume: ${d.volume}`
-            }
-          },
-          xAxis: { type: 'category', data: xData },
-          yAxis: {
-            type: 'value',
-            min,
-            max,
-            splitNumber: 5,
-            axisLabel: {
-              show: true,
-              color: '#bfc9d4',
-              formatter: function(value: number) {
-                if (Math.abs(value - min) < 1e-6 || Math.abs(value - max) < 1e-6) return '';
-                return value;
-              }
+            xAxis: { type: 'category', data: xData },
+            yAxis: {
+              type: 'value',
+              min,
+              max,
+              splitNumber: 5,
+              axisLabel: {
+                show: true,
+                color: '#bfc9d4',
+                formatter: function(value: number) {
+                  if (Math.abs(value - min) < 1e-6 || Math.abs(value - max) < 1e-6) return ' ';
+                  return value.toString();
+                }
+              },
+              splitLine: { show: true, lineStyle: { color: '#fff', opacity: 0.18, width: 1, type: 'solid' } },
+              axisTick: { show: false },
+              axisLine: { show: false }
             },
-            splitLine: { show: true, lineStyle: { color: '#fff', opacity: 0.18, width: 1, type: 'solid' } },
-            axisTick: { show: false },
-            axisLine: { show: false }
-          },
-          series: [{
-            type: 'line',
-            data: data.map(d => d.close),
-            smooth: true,
-            symbol: 'none',
-            lineStyle: { color: '#3fc371', width: 2 },
-            areaStyle: { color: 'rgba(63,195,113,0.18)' }
-          }]
+            series: [{
+              type: 'line',
+              data: data.map(d => d.close),
+              smooth: true,
+              symbol: 'none',
+              lineStyle: { color: '#3fc371', width: 2 },
+              areaStyle: { color: 'rgba(63,195,113,0.18)' }
+            }]
+          }
         }
+        chartInstance?.setOption(option)
+      } catch (e) {
+        console.error('KLineChart renderChart error:', e)
       }
-      chartInstance?.setOption(option)
     }
     return {
       chartRef,

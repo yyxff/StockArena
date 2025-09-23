@@ -19,7 +19,7 @@
         <div class="main-cards">
           <div class="kline-card-dark">
             <div class="card-title">K线图</div>
-            <KLineChart :symbol="selectedStock" />
+            <KLineChart :symbol="selectedStock" :data="currentKlineData" />
           </div>
           <div class="orders-card-dark">
             <div class="card-title">下单</div>
@@ -32,21 +32,55 @@
 </template>
 
 <script lang="ts">
-import { defineComponent, ref } from 'vue'
+import { defineComponent, ref, watch } from 'vue'
 import StockList from '../components/StockList.vue'
 import KLineChart from '../components/KLineChart.vue'
 import Orders from '../components/Orders.vue'
 import OrderForm from '../components/OrderForm.vue'
 
+// mock k线生成函数
+function genMockKLine(symbol: string) {
+  const now = Date.now()
+  const arr = []
+  let lastClose = 100 + Math.floor(Math.random() * 100)
+  for (let i = 0; i < 120; i++) {
+    const isUp = Math.random() > 0.45
+    const change = +(Math.random() * 1.5 + 0.1).toFixed(2)
+    const open = lastClose
+    const close = +(isUp ? open + change : open - change).toFixed(2)
+    const high = +(Math.max(open, close) + Math.random() * 0.5).toFixed(2)
+    const low = +(Math.min(open, close) - Math.random() * 0.5).toFixed(2)
+    const volume = +(Math.random() * 1000 + 1000).toFixed(0)
+    arr.push({
+      open, close, high, low, volume,
+      timestamp: now - (119 - i) * 60 * 1000
+    })
+    lastClose = close
+  }
+  return arr
+}
+
 export default defineComponent({
   components: { StockList, KLineChart, Orders, OrderForm },
   setup() {
     const selectedStock = ref('AAPL')
-    const onOrderSubmit = (order) => {
+    const klineMap = ref<Record<string, any[]>>({})
+    // 初始化默认股票
+    if (!klineMap.value['AAPL']) {
+      klineMap.value['AAPL'] = genMockKLine('AAPL')
+    }
+    const currentKlineData = ref(klineMap.value[selectedStock.value])
+    watch(selectedStock, (symbol) => {
+      if (!klineMap.value[symbol]) {
+        klineMap.value[symbol] = genMockKLine(symbol)
+      }
+      currentKlineData.value = klineMap.value[symbol]
+    }, { immediate: true })
+    const onOrderSubmit = (order: any) => {
       // 这里可以处理下单逻辑，比如调用API
       console.log('下单信息', order)
     }
-    return { selectedStock, onOrderSubmit }
+    return { selectedStock, onOrderSubmit, currentKlineData }
   }
 })
 </script>
