@@ -57,7 +57,12 @@ public class KLineService {
             String key = "kline:" + entry.getKey() + ":1m";
             String json = objectMapper.writeValueAsString(kline);
             redisTemplate.opsForZSet().add(key, json, kline.getTimestamp());
-            klineWebSocketHandler.sendKline(entry.getKey(), json);
+            // klineWebSocketHandler.sendKline(entry.getKey(), json);
+
+            // Publish Redis Pub/Sub Channel
+            String channel = "kline:" + entry.getKey();
+            redisTemplate.convertAndSend(channel, json);
+
             System.out.println("Flushed KLine to Redis: " + json);
         }
     }

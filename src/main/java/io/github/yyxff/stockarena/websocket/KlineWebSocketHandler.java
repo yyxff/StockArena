@@ -17,9 +17,15 @@ public class KlineWebSocketHandler extends TextWebSocketHandler {
     private final Map<String, Set<WebSocketSession>> subscribers = new ConcurrentHashMap<>();
 
     @Override
+    public void afterConnectionEstablished(WebSocketSession session) throws Exception {
+        System.out.println("WebSocket connection established: " + session.getId());
+    }
+
+    @Override
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) throws Exception {
         // 清理 session
         subscribers.values().forEach(sessions -> sessions.remove(session));
+        System.out.println("WebSocket connection closed: " + session.getId());
     }
 
     @Override

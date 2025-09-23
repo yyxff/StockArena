@@ -1,5 +1,21 @@
 <template>
   <div>
+    <div style="margin-bottom: 10px;">
+      <button
+        :class="['mode-btn', { active: currentMode === 'mock' }]"
+        @click="switchMode('mock')"
+      >Mock数据</button>
+      <button
+        :class="['mode-btn', { active: currentMode === 'real' }]"
+        @click="switchMode('real')"
+      >实时推送</button>
+      <span style="margin-left: 12px; font-size: 14px; color: #888;">
+        模式: {{ currentMode === 'mock' ? 'Mock数据' : 'WebSocket实时' }}
+        <span v-if="currentMode === 'real' && wsStatus" :style="{ color: wsStatus === 'connected' ? '#4CAF50' : '#f44336' }">
+          ({{ wsStatus === 'connected' ? '已连接' : wsStatus === 'connecting' ? '连接中' : '断开' }})
+        </span>
+      </span>
+    </div>
     <div class="interval-bar">
       <button
         v-for="item in intervals"
@@ -79,6 +95,12 @@ export default defineComponent({
   setup(props) {
     const chartRef = ref<HTMLDivElement | null>(null)
     let chartInstance: echarts.ECharts | null = null
+
+    // 添加模式切换相关状态
+    const currentMode = ref('mock')
+    const wsStatus = ref('')
+    let ws: WebSocket | null = null
+
     // 优先用 props.data，否则 fallback 到 mockKLineData
     const klineData = ref<any[]>(props.data && props.data.length ? props.data : [...mockKLineData])
     // 监听 props.data 变化，动态更新 klineData
@@ -150,10 +172,18 @@ export default defineComponent({
     })
     onBeforeUnmount(() => {
       document.removeEventListener('click', handleClickOutside)
+      if (ws) {
+        ws.close()
+        ws = null
+      }
     })
     onUnmounted(() => {
       chartInstance?.dispose()
       window.removeEventListener('resize', updateSlider)
+      if (ws) {
+        ws.close()
+        ws = null
+      }
     })
     watch(interval, () => nextTick(() => updateSlider()))
     watch(chartType, () => renderChart(aggregateKLine(klineData.value, interval.value)))
@@ -285,6 +315,91 @@ export default defineComponent({
         console.error('KLineChart renderChart error:', e)
       }
     }
+
+    // 切换模式函数
+    const switchMode = (mode: string) => {
+      if (currentMode.value === mode) return
+
+      currentMode.value = mode
+
+      if (mode === 'mock') {
+        // 断开 WebSocket
+        if (ws) {
+          ws.close()
+          ws = null
+        }
+        wsStatus.value = ''
+        // 恢复 mock 数据
+        klineData.value = [...mockKLineData]
+        renderChart(aggregateKLine(klineData.value, interval.value))
+      } else if (mode === 'real') {
+        // 连接 WebSocket
+        connectWebSocket()
+      }
+    }
+
+    // WebSocket 连接函数
+    const connectWebSocket = () => {
+      if (ws) ws.close()
+
+      wsStatus.value = 'connecting'
+      const wsUrl = `ws://localhost:8080/ws/kline/${props.symbol}`
+
+      try {
+        ws = new WebSocket(wsUrl)
+
+        ws.onopen = () => {
+          console.log('WebSocket connected to:', wsUrl)
+          wsStatus.value = 'connected'
+        }
+
+        ws.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data)
+            console.log('Received WebSocket data:', data)
+
+            // 如果接收到的是单条 K线数据
+            if (data.stock && data.kline) {
+              const kline = JSON.parse(data.kline)
+              updateKLineData(kline)
+            } else if (data.open !== undefined && data.close !== undefined) {
+              // 直接是 K线数据
+              updateKLineData(data)
+            }
+          } catch (e) {
+            console.error('WebSocket data parse error:', e)
+          }
+        }
+
+        ws.onclose = () => {
+          console.log('WebSocket disconnected')
+          wsStatus.value = 'disconnected'
+        }
+
+        ws.onerror = (error) => {
+          console.error('WebSocket error:', error)
+          wsStatus.value = 'error'
+        }
+      } catch (e) {
+        console.error('WebSocket connection failed:', e)
+        wsStatus.value = 'error'
+      }
+    }
+
+    // 更新 K线数据
+    const updateKLineData = (newKLine: any) => {
+      // 添加到数据数组
+      klineData.value.push(newKLine)
+
+      // 保持最近 120 根 K线
+      if (klineData.value.length > 120) {
+        klineData.value.shift()
+      }
+
+      // 重新渲染图表
+      renderChart(aggregateKLine(klineData.value, interval.value))
+    }
+
     return {
       chartRef,
       intervals,
@@ -296,7 +411,10 @@ export default defineComponent({
       dropdownOpen,
       dropdownRef,
       toggleDropdown,
-      selectChartType
+      selectChartType,
+      currentMode,
+      wsStatus,
+      switchMode
     }
   }
 })
@@ -423,6 +541,27 @@ export default defineComponent({
 }
 .option-label {
   font-size: 15px;
+}
+
+.mode-btn {
+  border: none;
+  background: #333;
+  color: #fff;
+  padding: 8px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  margin-right: 8px;
+  font-size: 14px;
+  transition: background 0.3s;
+}
+
+.mode-btn:hover {
+  background: #555;
+}
+
+.mode-btn.active {
+  background: #1677ff;
+  color: white;
 }
 
 /* 让 ECharts 适配深色主题 */
