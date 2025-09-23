@@ -15,14 +15,13 @@ import io.github.yyxff.stockarena.service.AccountService;
 import io.github.yyxff.stockarena.service.PortfolioService;
 import jakarta.transaction.Transactional;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Service
-public class PersistenceService {
+public class MatchResultPersistenceService {
 
     @Autowired
     private TradeRepository tradeRepository;
@@ -39,7 +38,6 @@ public class PersistenceService {
     @Autowired
     private BalanceChangeRepository balanceChangeRepository;
 
-    @Async("asyncExecutor")
     @Transactional
     public void saveMatchResult(MatchResult result) {
         // 1. Save trade records and update portfolios

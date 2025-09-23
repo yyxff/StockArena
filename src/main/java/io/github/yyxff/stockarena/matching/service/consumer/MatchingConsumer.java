@@ -1,6 +1,7 @@
-package io.github.yyxff.stockarena.matching;
+package io.github.yyxff.stockarena.matching.service.consumer;
 
 import io.github.yyxff.stockarena.dto.OrderMessage;
+import io.github.yyxff.stockarena.matching.MatchingEngineManager;
 import io.github.yyxff.stockarena.matching.service.MatchingEngine;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.kafka.annotation.KafkaListener;
@@ -22,8 +23,11 @@ public class MatchingConsumer {
      * @param orderMessage
      * @param partition
      */
-    @KafkaListener(topics = "orders", groupId = "order-matcher", concurrency = "4")
-    public void consume(OrderMessage orderMessage, @Header(KafkaHeaders.RECEIVED_PARTITION) int partition) {
+    @KafkaListener(topics = "orders",
+                   groupId = "order-matcher",
+                   concurrency = "4")
+    public void consume(OrderMessage orderMessage,
+                        @Header(KafkaHeaders.RECEIVED_PARTITION) int partition) {
         MatchingEngine engine = matchingEngineManager.getEngineByPartition(partition);
         System.out.println("assign to engine " + partition);
         engine.dispatch(orderMessage);

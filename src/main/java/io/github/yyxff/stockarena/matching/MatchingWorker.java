@@ -4,8 +4,10 @@ import io.github.yyxff.stockarena.dto.OrderMessage;
 import io.github.yyxff.stockarena.dto.TradeMessage;
 import io.github.yyxff.stockarena.dto.TradeWithChanges;
 import io.github.yyxff.stockarena.matching.dto.MatchResult;
+import io.github.yyxff.stockarena.matching.producer.MatchResultProducer;
 import io.github.yyxff.stockarena.matching.producer.TradeProducer;
-import io.github.yyxff.stockarena.matching.service.PersistenceService;
+import io.github.yyxff.stockarena.matching.service.MatchResultPersistenceService;
+import org.springframework.kafka.core.KafkaTemplate;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -20,16 +22,22 @@ public class MatchingWorker implements Runnable {
 
     private final Map<String, OrderBook> books = new HashMap<>();
 
-    private final PersistenceService persistenceService;
+    private final MatchResultPersistenceService matchResultPersistenceService;
 
     private final TradeProducer tradeProducer;
 
+    private final MatchResultProducer matchResultProducer;
+
     private final OrderDeduplicator deduplicator = new OrderDeduplicator(1000, 60 * 1000, 0.01);
 
-    public MatchingWorker(String name, PersistenceService persistenceService, TradeProducer tradeProducer) {
+    public MatchingWorker(String name,
+                          MatchResultPersistenceService matchResultPersistenceService,
+                          TradeProducer tradeProducer,
+                          MatchResultProducer matchResultProducer) {
         this.name = name;
-        this.persistenceService = persistenceService;
+        this.matchResultPersistenceService = matchResultPersistenceService;
         this.tradeProducer = tradeProducer;
+        this.matchResultProducer = matchResultProducer;
     }
 
     public void submit(OrderMessage orderMessage) {
@@ -78,10 +86,8 @@ public class MatchingWorker implements Runnable {
                 // 4. Send trades to MQ
                 sendAllTradesToMQ(result);
 
-                // 5. Async Persist match result
-
-                // TODO: send it to MQ too then save it
-                persistenceService.saveMatchResult(result);
+                // 5. Send match result to MQ
+                matchResultProducer.sendMatchResult(result);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 break;

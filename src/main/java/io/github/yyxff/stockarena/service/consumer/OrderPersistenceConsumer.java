@@ -1,4 +1,4 @@
-package io.github.yyxff.stockarena.service;
+package io.github.yyxff.stockarena.service.consumer;
 
 import io.github.yyxff.stockarena.config.KafkaTopics;
 import io.github.yyxff.stockarena.dto.OrderMessage;
@@ -14,11 +14,9 @@ import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.messaging.handler.annotation.Payload;
 import org.springframework.stereotype.Service;
 
-import java.time.LocalDateTime;
-
 @Service
 @Slf4j
-public class OrderPersistenceService {
+public class OrderPersistenceConsumer {
 
     @Autowired
     private OrderRepository orderRepository;

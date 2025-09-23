@@ -41,7 +41,7 @@ public class OrderBook {
     }
 
     public MatchResult match(OrderMessage orderMessage) {
-        MatchResult matchResult = new MatchResult(new ArrayList<>(), new ArrayList<>());
+        MatchResult matchResult = new MatchResult();
         if (orderMessage.getOrderType() == OrderType.BUY) {
             matchBuyOrder(orderMessage, matchResult);
             if (orderMessage.getRemainingQuantity() > 0) {
@@ -61,7 +61,7 @@ public class OrderBook {
             OrderMessage bestSellOrder = sellOrders.peek();
             if (bestSellOrder.getPrice().compareTo(buyOrder.getPrice()) <= 0) {
 
-                TradeWithChanges tradeWithChanges = new TradeWithChanges(new ArrayList<>());
+                TradeWithChanges tradeWithChanges = new TradeWithChanges();
                 // Match found
                 int tradeQuantity = Math.min(buyOrder.getRemainingQuantity(), bestSellOrder.getRemainingQuantity());
                 // Create trade
@@ -143,7 +143,7 @@ public class OrderBook {
             OrderMessage bestBuyOrder = buyOrders.peek();
             if (bestBuyOrder.getPrice().compareTo(sellOrder.getPrice()) >= 0) {
 
-                TradeWithChanges tradeWithChanges = new TradeWithChanges(new ArrayList<>());
+                TradeWithChanges tradeWithChanges = new TradeWithChanges();
                 // Match found
                 int tradeQuantity = Math.min(sellOrder.getRemainingQuantity(), bestBuyOrder.getRemainingQuantity());
                 // Create trade

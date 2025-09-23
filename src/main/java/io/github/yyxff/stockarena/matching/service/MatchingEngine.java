@@ -2,6 +2,7 @@ package io.github.yyxff.stockarena.matching.service;
 
 import io.github.yyxff.stockarena.dto.OrderMessage;
 import io.github.yyxff.stockarena.matching.MatchingWorker;
+import io.github.yyxff.stockarena.matching.producer.MatchResultProducer;
 import io.github.yyxff.stockarena.matching.producer.TradeProducer;
 
 import java.util.ArrayList;
@@ -21,15 +22,20 @@ public class MatchingEngine {
     private final List<MatchingWorker> workers;
 
 
-    public MatchingEngine(String engineName, int workerCount, PersistenceService persistenceService, TradeProducer tradeProducer) {
+    public MatchingEngine(String engineName,
+                          int workerCount,
+                          MatchResultPersistenceService matchResultPersistenceService,
+                          TradeProducer tradeProducer,
+                          MatchResultProducer matchResultProducer) {
         this.engineName = engineName;
         this.workerCount = workerCount;
         this.workers = new ArrayList<>();
         for (int i = 0; i < workerCount; i++) {
             MatchingWorker worker = new MatchingWorker(
                     "MatchingWorker-" + engineName + "-" + i
-                    ,persistenceService
-                    ,tradeProducer);
+                    , matchResultPersistenceService
+                    ,tradeProducer,
+                    matchResultProducer);
             workers.add(worker);
             new Thread(worker).start();
         }
