@@ -14,7 +14,13 @@
 - Containerization & Deployment: Docker, docker-compose
 - Build Tooling: Maven
 
-## Features & Modules
+## Features
+
+- **Designed and implemented a custom order matching engine** with **dedicated thread pools** and dispatch logic, achieving a balance between parallel processing and resource allocation. Ensured strict order sequencing, low latency, and high throughput under high-concurrency scenarios. Supported a **multi-consumer model** with configurable multiple matching engine instances for load distribution.
+- Leveraged **Redis** to store high-frequency data such as candlesticks (K-line), user balances, and positions, effectively **reducing database load**. Built bi-directional **WebSocket** channels combined with **Redis Pub/Sub** to enable real-time subscription and push of candlestick data, ensuring low-latency connectivity and synchronization for a large number of clients.
+- Integrated **Kafka MQ** to **asynchronously distribute** orders and matching results to matching engines, persistence services, and other downstream consumers, ensuring system decoupling and durability. Implemented an **idempotent** persistence service, while the matching engine applied **LRU caching and Bloom filters** to efficiently handle order deduplication.
+
+## Modules
 - API Layer (REST):
 Provides endpoints for account management, order submission, queries, and trade history.
 - WebSocket Service:
