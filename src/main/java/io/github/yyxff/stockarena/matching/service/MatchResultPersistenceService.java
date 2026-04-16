@@ -61,25 +61,28 @@ public class MatchResultPersistenceService {
     }
 
     /**
-     * Apply secondary updates: portfolio changes, balance changes, and order status.
+     * Apply secondary DB updates: portfolio changes, balance changes, and order status.
      * Idempotent per trade: if BalanceChange records for a tradeId already exist the
-     * trade's updates are skipped.  Throws on failure so the caller (RocketMQ consumer)
-     * can let the message be retried until every trade is fully applied.
+     * trade's updates are skipped.  Throws on failure so the caller retries until every
+     * trade is fully applied.
+     *
+     * Redis is intentionally excluded here.  Mixing Redis ops inside a @Transactional
+     * method is unsafe: if the DB transaction rolls back, Redis cannot be rolled back,
+     * and the next retry would double-apply the Redis increment.
      */
     @Transactional
-    public void applySecondaryUpdates(MatchResult result) {
+    public void applySecondaryUpdatesDB(MatchResult result) {
         for (TradeWithChanges twc : result.getTradeWithChanges()) {
             TradeMessage trade = twc.getTrade();
 
             // Idempotency guard: skip if this trade's balance changes are already persisted
             if (balanceChangeRepository.existsByTradeId(trade.getId())) {
-                log.info("Secondary updates for trade {} already applied, skipping", trade.getId());
+                log.info("Secondary DB updates for trade {} already applied, skipping", trade.getId());
                 continue;
             }
 
-            // Buyer receives shares — update DB and Redis
+            // Buyer receives shares
             portfolioService.addShares(trade.getBuyerAccountId(), trade.getStockSymbol(), trade.getQuantity());
-            redisInventoryService.addShares(trade.getBuyerAccountId(), trade.getStockSymbol(), trade.getQuantity());
 
             // Seller's frozen shares are deducted — Redis was already decremented at order placement
             portfolioService.deductShares(trade.getSellerAccountId(), trade.getStockSymbol(), trade.getQuantity());
@@ -87,19 +90,13 @@ public class MatchResultPersistenceService {
             for (BalanceChangeDTO dto : twc.getBalanceChanges()) {
                 balanceChangeRepository.save(toBalanceChangeEntity(dto));
                 switch (dto.getChangeType()) {
-                    case TRADE_ADD, DEPOSIT -> {
-                        accountService.addBalance(dto.getAccountId(), dto.getAmount());
-                        // Seller (or deposit recipient) gains available balance
-                        redisInventoryService.addBalance(dto.getAccountId(), dto.getAmount());
-                    }
+                    case TRADE_ADD, DEPOSIT ->
+                            accountService.addBalance(dto.getAccountId(), dto.getAmount());
                     case TRADE_DEDUCT ->
                             // Deducts from frozen balance — Redis available was already decremented at order placement
                             accountService.deductBalance(dto.getAccountId(), dto.getAmount());
-                    case TRADE_REFUND, ORDER_CANCEL -> {
-                        accountService.releaseBalance(dto.getAccountId(), dto.getAmount());
-                        // Buyer gets price-difference refund back to available balance
-                        redisInventoryService.addBalance(dto.getAccountId(), dto.getAmount());
-                    }
+                    case TRADE_REFUND, ORDER_CANCEL ->
+                            accountService.releaseBalance(dto.getAccountId(), dto.getAmount());
                 }
             }
         }
@@ -120,6 +117,37 @@ public class MatchResultPersistenceService {
                 o.setStatus(OrderStatus.PARTIALLY_FILLED);
                 orderRepository.save(o);
             });
+        }
+    }
+
+    /**
+     * Apply Redis inventory updates after the DB transaction has committed.
+     * Called only after {@link #applySecondaryUpdatesDB} returns successfully.
+     *
+     * Redis is an approximate cache — if this call fails the inventory will
+     * self-heal on the next order placement via {@code syncFromDB}.  Therefore
+     * failures here are logged but not retried indefinitely.
+     */
+    public void applySecondaryUpdatesRedis(MatchResult result) {
+        for (TradeWithChanges twc : result.getTradeWithChanges()) {
+            TradeMessage trade = twc.getTrade();
+
+            // Buyer receives shares
+            redisInventoryService.addShares(trade.getBuyerAccountId(), trade.getStockSymbol(), trade.getQuantity());
+
+            for (BalanceChangeDTO dto : twc.getBalanceChanges()) {
+                switch (dto.getChangeType()) {
+                    case TRADE_ADD, DEPOSIT ->
+                            // Seller (or deposit recipient) gains available balance
+                            redisInventoryService.addBalance(dto.getAccountId(), dto.getAmount());
+                    case TRADE_REFUND, ORDER_CANCEL ->
+                            // Buyer gets price-difference refund back to available balance
+                            redisInventoryService.addBalance(dto.getAccountId(), dto.getAmount());
+                    case TRADE_DEDUCT -> {
+                        // No Redis action: available balance was already decremented at order placement
+                    }
+                }
+            }
         }
     }
 

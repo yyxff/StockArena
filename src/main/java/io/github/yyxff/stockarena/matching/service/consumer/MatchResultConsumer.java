@@ -39,23 +39,35 @@ public class MatchResultConsumer implements RocketMQListener<MatchResult> {
     }
 
     private void retrySecondaryUpdates(MatchResult matchResult) {
+        // Phase 1: DB updates — retry with backoff until the transaction commits.
+        // Redis ops are excluded from this transaction to prevent double-increment
+        // on rollback+retry (Redis cannot be rolled back).
         int attempt = 0;
         while (true) {
             try {
-                matchResultPersistenceService.applySecondaryUpdates(matchResult);
-                return;
+                matchResultPersistenceService.applySecondaryUpdatesDB(matchResult);
+                break;
             } catch (Exception e) {
                 attempt++;
                 long delayMs = Math.min(1_000L * attempt, 30_000L);
-                log.warn("Secondary updates failed (attempt {}), retrying in {}ms", attempt, delayMs, e);
+                log.warn("Secondary DB updates failed (attempt {}), retrying in {}ms", attempt, delayMs, e);
                 try {
                     Thread.sleep(delayMs);
                 } catch (InterruptedException ie) {
                     Thread.currentThread().interrupt();
-                    log.error("Secondary update retry interrupted for match result", ie);
+                    log.error("Secondary DB update retry interrupted", ie);
                     return;
                 }
             }
+        }
+
+        // Phase 2: Redis updates — called only after DB transaction has committed.
+        // Redis is an approximate cache; if this fails the inventory self-heals on
+        // the next order placement (syncFromDB).  No infinite retry needed.
+        try {
+            matchResultPersistenceService.applySecondaryUpdatesRedis(matchResult);
+        } catch (Exception e) {
+            log.error("Redis inventory update failed after trade settlement; will self-heal on next order placement", e);
         }
     }
 }
