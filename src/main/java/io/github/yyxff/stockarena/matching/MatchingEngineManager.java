@@ -1,5 +1,6 @@
 package io.github.yyxff.stockarena.matching;
 
+import io.github.yyxff.stockarena.common.IdGenerator;
 import io.github.yyxff.stockarena.matching.producer.MatchResultProducer;
 import io.github.yyxff.stockarena.matching.producer.TradeProducer;
 import io.github.yyxff.stockarena.matching.service.MatchingEngine;
@@ -23,6 +24,9 @@ public class MatchingEngineManager {
     @Autowired
     private MatchResultProducer matchResultProducer;
 
+    @Autowired
+    private IdGenerator idGenerator;
+
     private final Map<Integer, MatchingEngine> engines = new HashMap<>();
 
     private final int engineCount = 4;
@@ -30,15 +34,19 @@ public class MatchingEngineManager {
     @PostConstruct
     private void initEngines() {
         for (int i = 0; i < engineCount; i++) {
-            engines.put(i, new MatchingEngine("Engine-" + i, 4, matchResultPersistenceService, tradeProducer, matchResultProducer));
+            engines.put(i, new MatchingEngine(
+                    "Engine-" + i, 4,
+                    idGenerator,
+                    matchResultPersistenceService,
+                    tradeProducer,
+                    matchResultProducer));
         }
         System.out.println("Initialised " + engineCount + " MatchingEngines");
     }
 
     /**
      * Route an order to the correct engine by stock symbol.
-     * Same symbol always maps to the same engine (and from there to the same worker),
-     * preserving per-symbol ordering guarantees without relying on MQ partitions.
+     * Same symbol always maps to the same engine (and from there to the same worker).
      */
     public MatchingEngine getEngineBySymbol(String symbol) {
         int index = (symbol.hashCode() & Integer.MAX_VALUE) % engineCount;

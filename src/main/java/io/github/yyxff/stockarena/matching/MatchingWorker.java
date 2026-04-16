@@ -1,5 +1,6 @@
 package io.github.yyxff.stockarena.matching;
 
+import io.github.yyxff.stockarena.common.IdGenerator;
 import io.github.yyxff.stockarena.dto.OrderMessage;
 import io.github.yyxff.stockarena.dto.TradeMessage;
 import io.github.yyxff.stockarena.dto.TradeWithChanges;
@@ -17,6 +18,8 @@ public class MatchingWorker implements Runnable {
 
     private final String name;
 
+    private final IdGenerator idGenerator;
+
     private final BlockingQueue<OrderMessage> queue = new LinkedBlockingQueue<>();
 
     private final Map<String, OrderBook> books = new HashMap<>();
@@ -30,10 +33,12 @@ public class MatchingWorker implements Runnable {
     private final OrderDeduplicator deduplicator = new OrderDeduplicator();
 
     public MatchingWorker(String name,
+                          IdGenerator idGenerator,
                           MatchResultPersistenceService matchResultPersistenceService,
                           TradeProducer tradeProducer,
                           MatchResultProducer matchResultProducer) {
         this.name = name;
+        this.idGenerator = idGenerator;
         this.matchResultPersistenceService = matchResultPersistenceService;
         this.tradeProducer = tradeProducer;
         this.matchResultProducer = matchResultProducer;
@@ -49,15 +54,10 @@ public class MatchingWorker implements Runnable {
         queue.offer(orderMessage);
     }
 
-    /**
-     * Recover an existing order from the database into the order book at startup.
-     * Also marks the order as seen so that any delayed MQ delivery of the same
-     * order is rejected as a duplicate.
-     */
     public void initOrder(OrderMessage orderMessage) {
         deduplicator.markSeen(orderMessage.getOrderId());
         String stockSymbol = orderMessage.getStockSymbol();
-        OrderBook book = books.computeIfAbsent(stockSymbol, k -> new OrderBook(stockSymbol));
+        OrderBook book = books.computeIfAbsent(stockSymbol, k -> new OrderBook(k, idGenerator));
         switch (orderMessage.getOrderType()) {
             case BUY -> book.getBuyOrders().offer(orderMessage);
             case SELL -> book.getSellOrders().offer(orderMessage);
@@ -77,7 +77,9 @@ public class MatchingWorker implements Runnable {
             try {
                 OrderMessage orderMessage = queue.take();
 
-                OrderBook book = books.computeIfAbsent(orderMessage.getStockSymbol(), k -> new OrderBook(k));
+                OrderBook book = books.computeIfAbsent(
+                        orderMessage.getStockSymbol(),
+                        k -> new OrderBook(k, idGenerator));
                 MatchResult result = book.match(orderMessage);
 
                 sendAllTradesToMQ(result);

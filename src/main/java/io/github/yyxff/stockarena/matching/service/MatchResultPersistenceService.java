@@ -14,12 +14,13 @@ import io.github.yyxff.stockarena.repository.TradeRepository;
 import io.github.yyxff.stockarena.service.AccountService;
 import io.github.yyxff.stockarena.service.PortfolioService;
 import jakarta.transaction.Transactional;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
-import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
+@Slf4j
 @Service
 public class MatchResultPersistenceService {
 
@@ -38,61 +39,87 @@ public class MatchResultPersistenceService {
     @Autowired
     private BalanceChangeRepository balanceChangeRepository;
 
+    /**
+     * Persist all trade records contained in the match result.
+     * Idempotent: skips trades whose ID already exists in the database.
+     * This is the critical step — the MQ message is acknowledged after this returns.
+     */
     @Transactional
-    public void saveMatchResult(MatchResult result) {
-        // 1. Save trade records and update portfolios
-        for (TradeWithChanges tradeWithChanges : result.getTradeWithChanges()) {
-            // Save trade record
-            TradeMessage trade = tradeWithChanges.getTrade();
-            Trade tradeEntity = tradeRepository.save(toTradeEntity(trade));
-            System.out.println("Trade saved: " + trade);
+    public void saveTrades(MatchResult result) {
+        for (TradeWithChanges twc : result.getTradeWithChanges()) {
+            TradeMessage msg = twc.getTrade();
+            if (!tradeRepository.existsById(msg.getId())) {
+                tradeRepository.save(toTradeEntity(msg));
+                log.info("Trade saved: id={} symbol={} price={} qty={}",
+                        msg.getId(), msg.getStockSymbol(), msg.getPrice(), msg.getQuantity());
+            }
+        }
+    }
 
-            // Update buyer and seller portfolios
-            BigDecimal totalPrice = trade.getPrice().multiply(BigDecimal.valueOf(trade.getQuantity()));
-            portfolioService.addShares(trade.getBuyerAccountId(), trade.getStockSymbol(), trade.getQuantity());
-            portfolioService.deductShares(trade.getSellerAccountId(), trade.getStockSymbol(), trade.getQuantity());
+    /**
+     * Apply secondary updates: portfolio changes, balance changes, and order status.
+     * These run after the MQ ack. Failures here are logged but do not trigger a
+     * message retry — eventual consistency is acceptable for these fields.
+     */
+    public void applySecondaryUpdates(MatchResult result) {
+        applyPortfolioAndBalanceUpdates(result);
+        updateOrderStatuses(result);
+    }
 
-            // Save and apply balance changes
-            for (BalanceChangeDTO balanceChange : tradeWithChanges.getBalanceChanges()) {
-                balanceChange.setTradeId(tradeEntity.getId());
-                balanceChangeRepository.save(toBalanceChangeEntity(balanceChange));
-                switch (balanceChange.getChangeType()) {
-                    case TRADE_ADD, DEPOSIT -> {
-                        accountService.addBalance(balanceChange.getAccountId(), balanceChange.getAmount());
-                    }
-                    case TRADE_DEDUCT -> {
-                        accountService.deductBalance(balanceChange.getAccountId(), balanceChange.getAmount());
-                    }
-                    case TRADE_REFUND, ORDER_CANCEL -> {
-                        accountService.releaseBalance(balanceChange.getAccountId(), balanceChange.getAmount());
+    private void applyPortfolioAndBalanceUpdates(MatchResult result) {
+        for (TradeWithChanges twc : result.getTradeWithChanges()) {
+            TradeMessage trade = twc.getTrade();
+            try {
+                portfolioService.addShares(trade.getBuyerAccountId(), trade.getStockSymbol(), trade.getQuantity());
+                portfolioService.deductShares(trade.getSellerAccountId(), trade.getStockSymbol(), trade.getQuantity());
+
+                for (BalanceChangeDTO dto : twc.getBalanceChanges()) {
+                    balanceChangeRepository.save(toBalanceChangeEntity(dto));
+                    switch (dto.getChangeType()) {
+                        case TRADE_ADD, DEPOSIT ->
+                                accountService.addBalance(dto.getAccountId(), dto.getAmount());
+                        case TRADE_DEDUCT ->
+                                accountService.deductBalance(dto.getAccountId(), dto.getAmount());
+                        case TRADE_REFUND, ORDER_CANCEL ->
+                                accountService.releaseBalance(dto.getAccountId(), dto.getAmount());
                     }
                 }
+            } catch (Exception e) {
+                log.error("Failed to apply portfolio/balance updates for trade {}", trade.getId(), e);
+            }
+        }
+    }
+
+    private void updateOrderStatuses(MatchResult result) {
+        for (OrderMessage order : result.getFilledOrders()) {
+            try {
+                orderRepository.findById(order.getOrderId()).ifPresent(o -> {
+                    o.setStatus(OrderStatus.FILLED);
+                    o.setRemainingQuantity(0);
+                    orderRepository.save(o);
+                });
+            } catch (Exception e) {
+                log.error("Failed to update filled order status for order {}", order.getOrderId(), e);
             }
         }
 
-
-        // 2. Update filled orders
-        for (OrderMessage order : result.getFilledOrders()) {
-            orderRepository.findById(order.getOrderId()).ifPresent(o -> {
-                o.setStatus(OrderStatus.FILLED);
-                o.setRemainingQuantity(0);
-                orderRepository.save(o);
-            });
-        }
-
-        // 3. Update partially filled order
         if (result.getPartiallyFilledOrder() != null) {
             OrderMessage partial = result.getPartiallyFilledOrder();
-            orderRepository.findById(partial.getOrderId()).ifPresent(o -> {
-                o.setRemainingQuantity(partial.getRemainingQuantity());
-                o.setStatus(OrderStatus.PARTIALLY_FILLED);
-                orderRepository.save(o);
-            });
+            try {
+                orderRepository.findById(partial.getOrderId()).ifPresent(o -> {
+                    o.setRemainingQuantity(partial.getRemainingQuantity());
+                    o.setStatus(OrderStatus.PARTIALLY_FILLED);
+                    orderRepository.save(o);
+                });
+            } catch (Exception e) {
+                log.error("Failed to update partially filled order status for order {}", partial.getOrderId(), e);
+            }
         }
     }
 
     private Trade toTradeEntity(TradeMessage msg) {
         Trade t = new Trade();
+        t.setId(msg.getId());
         t.setBuyOrderId(msg.getBuyOrderId());
         t.setSellOrderId(msg.getSellOrderId());
         t.setStockSymbol(msg.getStockSymbol());

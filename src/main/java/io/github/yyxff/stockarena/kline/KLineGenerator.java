@@ -2,38 +2,27 @@ package io.github.yyxff.stockarena.kline;
 
 import io.github.yyxff.stockarena.dto.TradeMessage;
 import io.github.yyxff.stockarena.service.KLineService;
-import io.github.yyxff.stockarena.websocket.KlineWebSocketHandler;
+import org.apache.rocketmq.spring.annotation.RocketMQMessageListener;
+import org.apache.rocketmq.spring.core.RocketMQListener;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.stereotype.Component;
 
 /**
- * K-Line Generator
- * Consumer of MQ: topic "trades"
- * TODO:Producer to MQ: topic "kline-updates"
- *
- * Consumes trade messages from Kafka and updates K-Line data in memory.
- * The updated K-Line data can then be:
- * 1. Send to MQ for further processing
- * 2. Publish to redis pub/sub channel for real-time updates to clients.
+ * Consumes trade messages and updates in-memory K-line data.
+ * K-line data loss is acceptable — this consumer does not affect trade records.
  */
 @Component
-public class KLineGenerator {
-
-    private final KLineService kLineService;
+@RocketMQMessageListener(
+        topic = "trade-topic",
+        consumerGroup = "kline-generator"
+)
+public class KLineGenerator implements RocketMQListener<TradeMessage> {
 
     @Autowired
-    public KLineGenerator(KLineService kLineService) {
-        this.kLineService = kLineService;
-    }
+    private KLineService kLineService;
 
-    @KafkaListener(
-            topics = "trades",             // Trade topic
-            groupId = "kline-generator",
-            containerFactory = "kafkaListenerContainerFactory"
-    )
-    public void consume(TradeMessage tradeMessage) {
-        // Update K-Line data in memory
+    @Override
+    public void onMessage(TradeMessage tradeMessage) {
         kLineService.updateCurrentKLine(tradeMessage);
     }
 }

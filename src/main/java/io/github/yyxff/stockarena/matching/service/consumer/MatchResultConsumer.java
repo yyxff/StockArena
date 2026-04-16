@@ -1,36 +1,32 @@
 package io.github.yyxff.stockarena.matching.service.consumer;
 
-import io.github.yyxff.stockarena.config.KafkaTopics;
 import io.github.yyxff.stockarena.matching.dto.MatchResult;
 import io.github.yyxff.stockarena.matching.service.MatchResultPersistenceService;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.rocketmq.spring.annotation.RocketMQMessageListener;
+import org.apache.rocketmq.spring.core.RocketMQListener;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.kafka.annotation.KafkaListener;
-import org.springframework.messaging.handler.annotation.Payload;
 import org.springframework.stereotype.Service;
 
-@Service
 @Slf4j
-public class MatchResultConsumer {
+@Service
+@RocketMQMessageListener(
+        topic = "match-result-topic",
+        consumerGroup = "match-result-persistence"
+)
+public class MatchResultConsumer implements RocketMQListener<MatchResult> {
 
     @Autowired
     private MatchResultPersistenceService matchResultPersistenceService;
 
-    @KafkaListener(topics = KafkaTopics.MATCH_RESULTS, groupId = "match-result-persistence-group")
-    public void handleMatchResult(MatchResult matchResult) {
-        try {
-            log.info("Processing match result with {} trades and {} filled orders",
-                    matchResult.getTradeWithChanges().size(),
-                    matchResult.getFilledOrders().size());
+    @Override
+    public void onMessage(MatchResult matchResult) {
+        // Step 1: save trade records — throws on failure so RocketMQ retries
+        matchResultPersistenceService.saveTrades(matchResult);
 
-            // Save to db
-            matchResultPersistenceService.saveMatchResult(matchResult);
-
-            log.info("Match result processed successfully");
-
-        } catch (Exception e) {
-            log.error("Failed to process match result", e);
-            throw e; // Rethrow exception to trigger message retry
-        }
+        // MQ ack happens when onMessage returns normally (after step 1).
+        // Step 2: secondary updates — portfolio, balance, order status.
+        // Failures are caught and logged inside; they do not trigger a retry.
+        matchResultPersistenceService.applySecondaryUpdates(matchResult);
     }
 }

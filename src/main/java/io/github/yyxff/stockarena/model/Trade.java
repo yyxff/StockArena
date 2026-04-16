@@ -14,7 +14,6 @@ import java.time.LocalDateTime;
 public class Trade {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
     @Column(nullable = false)

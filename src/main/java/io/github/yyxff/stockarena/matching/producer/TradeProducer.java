@@ -1,19 +1,19 @@
 package io.github.yyxff.stockarena.matching.producer;
 
-import io.github.yyxff.stockarena.config.KafkaTopics;
 import io.github.yyxff.stockarena.dto.TradeMessage;
+import org.apache.rocketmq.spring.core.RocketMQTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Component;
 
 @Component
 public class TradeProducer {
 
+    private static final String TRADE_TOPIC = "trade-topic";
+
     @Autowired
-    private KafkaTemplate kafkaTemplate;
+    private RocketMQTemplate rocketMQTemplate;
 
     public void sendTrade(TradeMessage trade) {
-        kafkaTemplate.send(KafkaTopics.TRADES, trade.getStockSymbol(), trade);
-        System.out.println("Produced trade to Kafka: " + trade);
+        rocketMQTemplate.convertAndSend(TRADE_TOPIC, trade);
     }
 }
