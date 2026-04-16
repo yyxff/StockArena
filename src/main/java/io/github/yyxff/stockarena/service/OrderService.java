@@ -80,8 +80,8 @@ public class OrderService {
         try {
             sendTransactionalOrder(orderMsg);
         } catch (Exception e) {
-            // DB freeze failed — resync Redis to the actual DB available balance
-            redisInventoryService.syncBalanceFromDB(req.getAccountId());
+            // DB freeze failed — atomically add back what was deducted
+            redisInventoryService.addBalance(req.getAccountId(), total);
             throw e;
         }
     }
@@ -96,8 +96,8 @@ public class OrderService {
         try {
             sendTransactionalOrder(orderMsg);
         } catch (Exception e) {
-            // DB freeze failed — resync Redis to the actual DB available shares
-            redisInventoryService.syncSharesFromDB(req.getAccountId(), req.getStockSymbol());
+            // DB freeze failed — atomically add back what was deducted
+            redisInventoryService.addShares(req.getAccountId(), req.getStockSymbol(), req.getQuantity());
             throw e;
         }
     }
