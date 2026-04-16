@@ -14,4 +14,5 @@ public class OrderRequest {
     private int quantity;
     private BigDecimal price;
     private OrderType orderType;
+    private String token;
 }
