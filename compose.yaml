@@ -39,7 +39,9 @@ services:
 
   rocketmq-broker:
     image: apache/rocketmq:5.1.4
-    command: sh mqbroker -n rocketmq-namesrv:9876 autoCreateTopicEnable=true
+    command: sh mqbroker -c /etc/rocketmq/broker.conf
+    volumes:
+      - ./rocketmq/broker.conf:/etc/rocketmq/broker.conf
     environment:
       - JAVA_OPT_EXT=-Xmx512m -Xms512m -Xmn256m
     depends_on:
