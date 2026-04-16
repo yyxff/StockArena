@@ -11,7 +11,10 @@ import java.time.LocalDateTime;
 @Getter
 @Setter
 @Entity
-@Table(name = "orders")
+@Table(name = "orders", indexes = {
+        @Index(name = "idx_order_account", columnList = "accountId"),
+        @Index(name = "idx_order_symbol_status", columnList = "stockSymbol, status")
+})
 public class Order {
     @Id
     // @GeneratedValue(strategy = GenerationType.IDENTITY)
