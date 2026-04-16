@@ -30,3 +30,17 @@ services:
     image: 'redis:latest'
     ports:
       - '6379:6379'
+
+  rocketmq-namesrv:
+    image: apache/rocketmq:5.1.4
+    command: sh mqnamesrv
+    ports:
+      - "9876:9876"
+
+  rocketmq-broker:
+    image: apache/rocketmq:5.1.4
+    command: sh mqbroker -n rocketmq-namesrv:9876 autoCreateTopicEnable=true
+    environment:
+      - JAVA_OPT_EXT=-Xmx512m -Xms512m -Xmn256m
+    depends_on:
+      - rocketmq-namesrv

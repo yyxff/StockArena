@@ -24,6 +24,12 @@ spring:
 
   kafka:
     bootstrap-servers: localhost:9092
+
+rocketmq:
+  name-server: localhost:9876
+  producer:
+    group: order-producer-group
+    send-message-timeout: 3000
     producer:
       key-serializer: org.apache.kafka.common.serialization.StringSerializer
       value-serializer: org.springframework.kafka.support.serializer.JsonSerializer

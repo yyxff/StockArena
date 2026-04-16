@@ -31,3 +31,6 @@ build/
 
 ### VS Code ###
 .vscode/
+
+### Decision log ###
+decision.md
