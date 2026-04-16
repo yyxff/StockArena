@@ -7,7 +7,6 @@ import io.github.yyxff.stockarena.matching.dto.MatchResult;
 import io.github.yyxff.stockarena.matching.producer.MatchResultProducer;
 import io.github.yyxff.stockarena.matching.producer.TradeProducer;
 import io.github.yyxff.stockarena.matching.service.MatchResultPersistenceService;
-import org.springframework.kafka.core.KafkaTemplate;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -28,7 +27,7 @@ public class MatchingWorker implements Runnable {
 
     private final MatchResultProducer matchResultProducer;
 
-    private final OrderDeduplicator deduplicator = new OrderDeduplicator(1000, 60 * 1000, 0.01);
+    private final OrderDeduplicator deduplicator = new OrderDeduplicator();
 
     public MatchingWorker(String name,
                           MatchResultPersistenceService matchResultPersistenceService,
@@ -41,19 +40,22 @@ public class MatchingWorker implements Runnable {
     }
 
     public void submit(OrderMessage orderMessage) {
-        if (deduplicator.isDuplicate(orderMessage.getOrderId())) {
-            System.out.println("Duplicate order: " + orderMessage.getOrderId());
+        long orderId = orderMessage.getOrderId();
+        if (deduplicator.isDuplicate(orderId)) {
+            System.out.println("Duplicate order rejected: " + orderId);
             return;
         }
-        deduplicator.markActive(orderMessage.getOrderId());
+        deduplicator.markSeen(orderId);
         queue.offer(orderMessage);
     }
 
     /**
-     * Recover existing orders in database for a stock symbol into the order book
-     * @param orderMessage
+     * Recover an existing order from the database into the order book at startup.
+     * Also marks the order as seen so that any delayed MQ delivery of the same
+     * order is rejected as a duplicate.
      */
     public void initOrder(OrderMessage orderMessage) {
+        deduplicator.markSeen(orderMessage.getOrderId());
         String stockSymbol = orderMessage.getStockSymbol();
         OrderBook book = books.computeIfAbsent(stockSymbol, k -> new OrderBook(stockSymbol));
         switch (orderMessage.getOrderType()) {
@@ -72,21 +74,13 @@ public class MatchingWorker implements Runnable {
     @Override
     public void run() {
         while (true) {
-            try{
-                // 1. Take order message from queue
+            try {
                 OrderMessage orderMessage = queue.take();
 
-                // 2. Match order
                 OrderBook book = books.computeIfAbsent(orderMessage.getStockSymbol(), k -> new OrderBook(k));
                 MatchResult result = book.match(orderMessage);
 
-                // 3. Mark completed orders
-                deduplicator.markCompleted(result.getFilledOrders());
-
-                // 4. Send trades to MQ
                 sendAllTradesToMQ(result);
-
-                // 5. Send match result to MQ
                 matchResultProducer.sendMatchResult(result);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
