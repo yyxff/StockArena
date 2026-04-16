@@ -21,4 +21,19 @@ public class AsyncConfig {
         executor.initialize();
         return executor;
     }
+
+    /**
+     * Dedicated pool for trade secondary updates (portfolio, balance, order status).
+     * These run after the MQ ack and retry indefinitely on failure.
+     */
+    @Bean(name = "secondaryUpdateExecutor")
+    public Executor secondaryUpdateExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(4);
+        executor.setMaxPoolSize(8);
+        executor.setQueueCapacity(500);
+        executor.setThreadNamePrefix("SecondaryUpdate-");
+        executor.initialize();
+        return executor;
+    }
 }

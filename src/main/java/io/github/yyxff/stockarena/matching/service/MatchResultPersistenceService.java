@@ -58,62 +58,53 @@ public class MatchResultPersistenceService {
 
     /**
      * Apply secondary updates: portfolio changes, balance changes, and order status.
-     * These run after the MQ ack. Failures here are logged but do not trigger a
-     * message retry — eventual consistency is acceptable for these fields.
+     * Idempotent per trade: if BalanceChange records for a tradeId already exist the
+     * trade's updates are skipped.  Throws on failure so the caller (RocketMQ consumer)
+     * can let the message be retried until every trade is fully applied.
      */
+    @Transactional
     public void applySecondaryUpdates(MatchResult result) {
-        applyPortfolioAndBalanceUpdates(result);
-        updateOrderStatuses(result);
-    }
-
-    private void applyPortfolioAndBalanceUpdates(MatchResult result) {
         for (TradeWithChanges twc : result.getTradeWithChanges()) {
             TradeMessage trade = twc.getTrade();
-            try {
-                portfolioService.addShares(trade.getBuyerAccountId(), trade.getStockSymbol(), trade.getQuantity());
-                portfolioService.deductShares(trade.getSellerAccountId(), trade.getStockSymbol(), trade.getQuantity());
 
-                for (BalanceChangeDTO dto : twc.getBalanceChanges()) {
-                    balanceChangeRepository.save(toBalanceChangeEntity(dto));
-                    switch (dto.getChangeType()) {
-                        case TRADE_ADD, DEPOSIT ->
-                                accountService.addBalance(dto.getAccountId(), dto.getAmount());
-                        case TRADE_DEDUCT ->
-                                accountService.deductBalance(dto.getAccountId(), dto.getAmount());
-                        case TRADE_REFUND, ORDER_CANCEL ->
-                                accountService.releaseBalance(dto.getAccountId(), dto.getAmount());
-                    }
+            // Idempotency guard: skip if this trade's balance changes are already persisted
+            if (balanceChangeRepository.existsByTradeId(trade.getId())) {
+                log.info("Secondary updates for trade {} already applied, skipping", trade.getId());
+                continue;
+            }
+
+            portfolioService.addShares(trade.getBuyerAccountId(), trade.getStockSymbol(), trade.getQuantity());
+            portfolioService.deductShares(trade.getSellerAccountId(), trade.getStockSymbol(), trade.getQuantity());
+
+            for (BalanceChangeDTO dto : twc.getBalanceChanges()) {
+                balanceChangeRepository.save(toBalanceChangeEntity(dto));
+                switch (dto.getChangeType()) {
+                    case TRADE_ADD, DEPOSIT ->
+                            accountService.addBalance(dto.getAccountId(), dto.getAmount());
+                    case TRADE_DEDUCT ->
+                            accountService.deductBalance(dto.getAccountId(), dto.getAmount());
+                    case TRADE_REFUND, ORDER_CANCEL ->
+                            accountService.releaseBalance(dto.getAccountId(), dto.getAmount());
                 }
-            } catch (Exception e) {
-                log.error("Failed to apply portfolio/balance updates for trade {}", trade.getId(), e);
             }
         }
-    }
 
-    private void updateOrderStatuses(MatchResult result) {
+        // Order status updates are inherently idempotent (setting the same status twice is safe)
         for (OrderMessage order : result.getFilledOrders()) {
-            try {
-                orderRepository.findById(order.getOrderId()).ifPresent(o -> {
-                    o.setStatus(OrderStatus.FILLED);
-                    o.setRemainingQuantity(0);
-                    orderRepository.save(o);
-                });
-            } catch (Exception e) {
-                log.error("Failed to update filled order status for order {}", order.getOrderId(), e);
-            }
+            orderRepository.findById(order.getOrderId()).ifPresent(o -> {
+                o.setStatus(OrderStatus.FILLED);
+                o.setRemainingQuantity(0);
+                orderRepository.save(o);
+            });
         }
 
         if (result.getPartiallyFilledOrder() != null) {
             OrderMessage partial = result.getPartiallyFilledOrder();
-            try {
-                orderRepository.findById(partial.getOrderId()).ifPresent(o -> {
-                    o.setRemainingQuantity(partial.getRemainingQuantity());
-                    o.setStatus(OrderStatus.PARTIALLY_FILLED);
-                    orderRepository.save(o);
-                });
-            } catch (Exception e) {
-                log.error("Failed to update partially filled order status for order {}", partial.getOrderId(), e);
-            }
+            orderRepository.findById(partial.getOrderId()).ifPresent(o -> {
+                o.setRemainingQuantity(partial.getRemainingQuantity());
+                o.setStatus(OrderStatus.PARTIALLY_FILLED);
+                orderRepository.save(o);
+            });
         }
     }
 

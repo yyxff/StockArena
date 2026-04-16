@@ -8,4 +8,5 @@ import org.springframework.stereotype.Repository;
 @Repository
 public interface BalanceChangeRepository extends JpaRepository<BalanceChange, Long> {
 
+    boolean existsByTradeId(Long tradeId);
 }
