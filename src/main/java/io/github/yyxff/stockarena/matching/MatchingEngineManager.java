@@ -31,6 +31,14 @@ public class MatchingEngineManager {
 
     private final int engineCount = 4;
 
+    /**
+     * Set to true by MatchingInit after all historical orders have been loaded
+     * into the order books.  MatchingConsumer checks this before dispatching;
+     * messages that arrive before init completes are rejected so RocketMQ retries
+     * them, preventing orders from landing in an empty order book.
+     */
+    private volatile boolean initialized = false;
+
     @PostConstruct
     private void initEngines() {
         for (int i = 0; i < engineCount; i++) {
@@ -51,5 +59,13 @@ public class MatchingEngineManager {
     public MatchingEngine getEngineBySymbol(String symbol) {
         int index = (symbol.hashCode() & Integer.MAX_VALUE) % engineCount;
         return engines.get(index);
+    }
+
+    public boolean isInitialized() {
+        return initialized;
+    }
+
+    public void markInitialized() {
+        initialized = true;
     }
 }

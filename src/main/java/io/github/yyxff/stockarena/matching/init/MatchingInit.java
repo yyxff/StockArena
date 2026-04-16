@@ -38,6 +38,7 @@ public class MatchingInit {
         }
 
         System.out.println("Recovered " + pendingOrders.size() + " orders to matching engines.");
+        engineManager.markInitialized();
     }
 
     private OrderMessage toOrderMessage(Order order) {
