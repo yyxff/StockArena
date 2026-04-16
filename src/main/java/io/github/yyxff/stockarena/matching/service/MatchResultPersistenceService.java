@@ -13,6 +13,7 @@ import io.github.yyxff.stockarena.repository.OrderRepository;
 import io.github.yyxff.stockarena.repository.TradeRepository;
 import io.github.yyxff.stockarena.service.AccountService;
 import io.github.yyxff.stockarena.service.PortfolioService;
+import io.github.yyxff.stockarena.service.RedisInventoryService;
 import jakarta.transaction.Transactional;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -38,6 +39,9 @@ public class MatchResultPersistenceService {
 
     @Autowired
     private BalanceChangeRepository balanceChangeRepository;
+
+    @Autowired
+    private RedisInventoryService redisInventoryService;
 
     /**
      * Persist all trade records contained in the match result.
@@ -73,18 +77,29 @@ public class MatchResultPersistenceService {
                 continue;
             }
 
+            // Buyer receives shares — update DB and Redis
             portfolioService.addShares(trade.getBuyerAccountId(), trade.getStockSymbol(), trade.getQuantity());
+            redisInventoryService.addShares(trade.getBuyerAccountId(), trade.getStockSymbol(), trade.getQuantity());
+
+            // Seller's frozen shares are deducted — Redis was already decremented at order placement
             portfolioService.deductShares(trade.getSellerAccountId(), trade.getStockSymbol(), trade.getQuantity());
 
             for (BalanceChangeDTO dto : twc.getBalanceChanges()) {
                 balanceChangeRepository.save(toBalanceChangeEntity(dto));
                 switch (dto.getChangeType()) {
-                    case TRADE_ADD, DEPOSIT ->
-                            accountService.addBalance(dto.getAccountId(), dto.getAmount());
+                    case TRADE_ADD, DEPOSIT -> {
+                        accountService.addBalance(dto.getAccountId(), dto.getAmount());
+                        // Seller (or deposit recipient) gains available balance
+                        redisInventoryService.addBalance(dto.getAccountId(), dto.getAmount());
+                    }
                     case TRADE_DEDUCT ->
+                            // Deducts from frozen balance — Redis available was already decremented at order placement
                             accountService.deductBalance(dto.getAccountId(), dto.getAmount());
-                    case TRADE_REFUND, ORDER_CANCEL ->
-                            accountService.releaseBalance(dto.getAccountId(), dto.getAmount());
+                    case TRADE_REFUND, ORDER_CANCEL -> {
+                        accountService.releaseBalance(dto.getAccountId(), dto.getAmount());
+                        // Buyer gets price-difference refund back to available balance
+                        redisInventoryService.addBalance(dto.getAccountId(), dto.getAmount());
+                    }
                 }
             }
         }

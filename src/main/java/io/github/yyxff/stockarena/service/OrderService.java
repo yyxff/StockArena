@@ -39,25 +39,19 @@ public class OrderService {
     @Autowired
     private RedisTemplate<String, String> redisTemplate;
 
+    @Autowired
+    private RedisInventoryService redisInventoryService;
+
     // -------------------------------------------------------------------------
     // Token
     // -------------------------------------------------------------------------
 
-    /**
-     * Generate a one-time order token for the given account and store it in Redis
-     * with a 5-minute TTL. The token is a snowflake ID (string form).
-     */
     public String generateOrderToken(Long accountId) {
         String token = String.valueOf(idGenerator.nextId());
         redisTemplate.opsForValue().set(TOKEN_KEY_PREFIX + token, String.valueOf(accountId), TOKEN_TTL);
         return token;
     }
 
-    /**
-     * Validate and consume the token atomically using GETDEL.
-     * Throws if the token is missing, expired, already used, or bound to a
-     * different account.
-     */
     private void consumeToken(String token, Long accountId) {
         if (token == null || token.isBlank()) {
             throw new IllegalArgumentException("Order token is required");
@@ -75,47 +69,92 @@ public class OrderService {
     // Place order
     // -------------------------------------------------------------------------
 
-    public void placeBuyOrder(OrderRequest orderRequest) {
-        consumeToken(orderRequest.getToken(), orderRequest.getAccountId());
-        validateBuyOrder(orderRequest);
-        OrderMessage orderMsg = buildOrderMessage(orderRequest);
-        sendTransactionalOrder(orderMsg);
+    public void placeBuyOrder(OrderRequest req) {
+        consumeToken(req.getToken(), req.getAccountId());
+        validateBuyOrder(req);
+
+        BigDecimal total = req.getPrice().multiply(BigDecimal.valueOf(req.getQuantity()));
+        redisCheckAndDeductBalance(req.getAccountId(), total);
+
+        OrderMessage orderMsg = buildOrderMessage(req);
+        try {
+            sendTransactionalOrder(orderMsg);
+        } catch (Exception e) {
+            // DB freeze failed — resync Redis to the actual DB available balance
+            redisInventoryService.syncBalanceFromDB(req.getAccountId());
+            throw e;
+        }
     }
 
-    public void placeSellOrder(OrderRequest orderRequest) {
-        consumeToken(orderRequest.getToken(), orderRequest.getAccountId());
-        validateSellOrder(orderRequest);
-        OrderMessage orderMsg = buildOrderMessage(orderRequest);
-        sendTransactionalOrder(orderMsg);
+    public void placeSellOrder(OrderRequest req) {
+        consumeToken(req.getToken(), req.getAccountId());
+        validateSellOrder(req);
+
+        redisCheckAndDeductShares(req.getAccountId(), req.getStockSymbol(), req.getQuantity());
+
+        OrderMessage orderMsg = buildOrderMessage(req);
+        try {
+            sendTransactionalOrder(orderMsg);
+        } catch (Exception e) {
+            // DB freeze failed — resync Redis to the actual DB available shares
+            redisInventoryService.syncSharesFromDB(req.getAccountId(), req.getStockSymbol());
+            throw e;
+        }
     }
 
     // -------------------------------------------------------------------------
-    // Validation
+    // Redis inventory pre-check
     // -------------------------------------------------------------------------
 
-    private void validateBuyOrder(OrderRequest orderRequest) {
-        if (orderRequest.getQuantity() <= 0) {
-            throw new IllegalArgumentException("Quantity must be greater than zero");
+    private void redisCheckAndDeductBalance(Long accountId, BigDecimal amount) {
+        int result = redisInventoryService.checkAndDeductBalance(accountId, amount);
+        if (result == -1) {
+            // Key not initialised — load from DB and retry once
+            redisInventoryService.syncBalanceFromDB(accountId);
+            result = redisInventoryService.checkAndDeductBalance(accountId, amount);
         }
-        if (orderRequest.getPrice().compareTo(BigDecimal.ZERO) <= 0) {
-            throw new IllegalArgumentException("Price must be greater than zero");
-        }
-        BigDecimal totalPrice = orderRequest.getPrice()
-                .multiply(BigDecimal.valueOf(orderRequest.getQuantity()));
-        if (accountService.getAvailableBalance(orderRequest.getAccountId()).compareTo(totalPrice) < 0) {
+        if (result == 0) {
             throw new IllegalArgumentException("Insufficient balance");
         }
     }
 
-    private void validateSellOrder(OrderRequest orderRequest) {
-        if (orderRequest.getQuantity() <= 0) {
+    private void redisCheckAndDeductShares(Long accountId, String symbol, int qty) {
+        int result = redisInventoryService.checkAndDeductShares(accountId, symbol, qty);
+        if (result == -1) {
+            redisInventoryService.syncSharesFromDB(accountId, symbol);
+            result = redisInventoryService.checkAndDeductShares(accountId, symbol, qty);
+        }
+        if (result == 0) {
+            throw new IllegalArgumentException("Insufficient shares to sell");
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Validation (DB read — fast fail before touching MQ)
+    // -------------------------------------------------------------------------
+
+    private void validateBuyOrder(OrderRequest req) {
+        if (req.getQuantity() <= 0) {
             throw new IllegalArgumentException("Quantity must be greater than zero");
         }
-        if (orderRequest.getPrice().compareTo(BigDecimal.ZERO) <= 0) {
+        if (req.getPrice().compareTo(BigDecimal.ZERO) <= 0) {
             throw new IllegalArgumentException("Price must be greater than zero");
         }
-        if (portfolioService.getAvailableShares(orderRequest.getAccountId(), orderRequest.getStockSymbol())
-                < orderRequest.getQuantity()) {
+        BigDecimal total = req.getPrice().multiply(BigDecimal.valueOf(req.getQuantity()));
+        if (accountService.getAvailableBalance(req.getAccountId()).compareTo(total) < 0) {
+            throw new IllegalArgumentException("Insufficient balance");
+        }
+    }
+
+    private void validateSellOrder(OrderRequest req) {
+        if (req.getQuantity() <= 0) {
+            throw new IllegalArgumentException("Quantity must be greater than zero");
+        }
+        if (req.getPrice().compareTo(BigDecimal.ZERO) <= 0) {
+            throw new IllegalArgumentException("Price must be greater than zero");
+        }
+        if (portfolioService.getAvailableShares(req.getAccountId(), req.getStockSymbol())
+                < req.getQuantity()) {
             throw new IllegalArgumentException("Insufficient shares to sell");
         }
     }
@@ -124,18 +163,18 @@ public class OrderService {
     // MQ
     // -------------------------------------------------------------------------
 
-    private OrderMessage buildOrderMessage(OrderRequest orderRequest) {
-        OrderMessage orderMsg = new OrderMessage();
-        orderMsg.setOrderId(idGenerator.nextId());   // fresh snowflake, independent of token
-        orderMsg.setAccountId(orderRequest.getAccountId());
-        orderMsg.setStockSymbol(orderRequest.getStockSymbol());
-        orderMsg.setPrice(orderRequest.getPrice());
-        orderMsg.setTotalQuantity(orderRequest.getQuantity());
-        orderMsg.setRemainingQuantity(orderRequest.getQuantity());
-        orderMsg.setOrderType(orderRequest.getOrderType());
-        orderMsg.setOrderStatus(OrderStatus.OPEN);
-        orderMsg.setCreatedAt(java.time.LocalDateTime.now());
-        return orderMsg;
+    private OrderMessage buildOrderMessage(OrderRequest req) {
+        OrderMessage msg = new OrderMessage();
+        msg.setOrderId(idGenerator.nextId());
+        msg.setAccountId(req.getAccountId());
+        msg.setStockSymbol(req.getStockSymbol());
+        msg.setPrice(req.getPrice());
+        msg.setTotalQuantity(req.getQuantity());
+        msg.setRemainingQuantity(req.getQuantity());
+        msg.setOrderType(req.getOrderType());
+        msg.setOrderStatus(OrderStatus.OPEN);
+        msg.setCreatedAt(java.time.LocalDateTime.now());
+        return msg;
     }
 
     private void sendTransactionalOrder(OrderMessage orderMsg) {
