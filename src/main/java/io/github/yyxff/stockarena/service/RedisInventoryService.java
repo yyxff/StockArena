@@ -29,6 +29,20 @@ public class RedisInventoryService {
     static final String SHARES_KEY_PREFIX  = "portfolio:shares:";
 
     /**
+     * Increments a decimal key by the given amount using INCRBYFLOAT with the
+     * plain-string representation of the value, bypassing Java's double conversion.
+     *
+     * Spring's RedisTemplate.increment(key, double) calls INCRBYFLOAT but converts
+     * BigDecimal → double first, which can introduce floating-point error for values
+     * like 0.1 or 0.3.  Passing toPlainString() as a Lua ARGV keeps the exact
+     * decimal string all the way to the Redis command.
+     */
+    private static final RedisScript<String> INCR_BY_DECIMAL = RedisScript.of(
+            "return redis.call('INCRBYFLOAT', KEYS[1], ARGV[1])",
+            String.class
+    );
+
+    /**
      * Atomically checks whether the current value is >= required, and if so
      * subtracts it.  Returns:
      *  1  – success (deducted)
@@ -111,7 +125,8 @@ public class RedisInventoryService {
 
     /** Seller / buyer-refund receives balance after a trade. */
     public void addBalance(Long accountId, BigDecimal amount) {
-        redisTemplate.opsForValue().increment(
-                BALANCE_KEY_PREFIX + accountId, amount.doubleValue());
+        redisTemplate.execute(INCR_BY_DECIMAL,
+                List.of(BALANCE_KEY_PREFIX + accountId),
+                amount.toPlainString());
     }
 }
