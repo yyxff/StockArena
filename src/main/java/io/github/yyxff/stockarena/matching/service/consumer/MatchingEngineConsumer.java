@@ -6,7 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.apache.rocketmq.client.consumer.DefaultMQPushConsumer;
 import org.apache.rocketmq.spring.annotation.ConsumeMode;
 import org.apache.rocketmq.spring.annotation.RocketMQMessageListener;
-import org.apache.rocketmq.spring.core.RocketMQConsumerLifecycleListener;
+import org.apache.rocketmq.spring.core.RocketMQPushConsumerLifecycleListener;
 import org.apache.rocketmq.spring.core.RocketMQListener;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -38,7 +38,7 @@ import org.springframework.stereotype.Component;
         consumeMode = ConsumeMode.ORDERLY
 )
 public class MatchingEngineConsumer implements RocketMQListener<OrderMessage>,
-        RocketMQConsumerLifecycleListener<DefaultMQPushConsumer> {
+        RocketMQPushConsumerLifecycleListener {
 
     @Autowired
     private MatchingEngineManager matchingEngineManager;
