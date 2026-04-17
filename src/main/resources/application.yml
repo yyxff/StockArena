@@ -27,3 +27,12 @@ rocketmq:
   producer:
     group: order-producer-group
     send-message-timeout: 3000
+
+# Matching engine consumer queue assignment.
+# Each instance is assigned a fixed range of queues so symbol-to-engine routing
+# never changes due to rebalance.  Override per instance via environment variables:
+#   MATCHING_CONSUMER_QUEUE_START=0  MATCHING_CONSUMER_QUEUE_END=15
+matching:
+  consumer:
+    queue-start: 0
+    queue-end: 63

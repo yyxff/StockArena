@@ -1,46 +1,49 @@
 package io.github.yyxff.stockarena.matching.service.consumer;
 
 import io.github.yyxff.stockarena.dto.OrderMessage;
-import io.github.yyxff.stockarena.matching.MatchingEngineManager;
-import io.github.yyxff.stockarena.matching.service.MatchingEngine;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.rocketmq.spring.annotation.RocketMQMessageListener;
 import org.apache.rocketmq.spring.core.RocketMQListener;
+import org.apache.rocketmq.spring.core.RocketMQTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 /**
- * Consumes order messages from RocketMQ and dispatches them to the correct
- * MatchingEngine by stock symbol hash.
+ * Receives committed order messages from order-topic (transactional, random queue)
+ * and re-publishes them to order-routing-topic using syncSendOrderly with the stock
+ * symbol as the hash key.
  *
- * Same symbol always routes to the same engine (and worker), preserving
- * per-symbol ordering without requiring FIFO queues in the broker.
+ * This two-hop design decouples two separate concerns:
+ *  1. order-topic (Transaction type)  — atomicity between DB freeze and MQ publish
+ *  2. order-routing-topic (FIFO type) — per-symbol ordering and fixed consumer routing
  *
- * Returning normally from onMessage acknowledges the message; throwing causes
- * RocketMQ to delay and retry, which is used as a back-pressure gate while
- * MatchingInit is still loading historical orders into the order books.
+ * RocketMQ requires Transaction and FIFO to be separate topic types, so the two hops
+ * are unavoidable.  syncSendOrderly routes same symbol to the same queue deterministically
+ * via hash(symbol) % queueCount — equivalent to setting MessageGroup = symbol in 5.x.
+ *
+ * Idempotency: if this consumer retries (re-publishes the same orderId twice),
+ * the OrderDeduplicator in the matching engine drops the duplicate.
  */
 @Slf4j
 @Component
 @RocketMQMessageListener(
         topic = "order-topic",
-        consumerGroup = "order-matcher"
+        consumerGroup = "order-router"
 )
 public class MatchingConsumer implements RocketMQListener<OrderMessage> {
 
+    static final String ORDER_ROUTING_TOPIC = "order-routing-topic";
+
     @Autowired
-    private MatchingEngineManager matchingEngineManager;
+    private RocketMQTemplate rocketMQTemplate;
 
     @Override
     public void onMessage(OrderMessage orderMessage) {
-        if (!matchingEngineManager.isInitialized()) {
-            // Order books are still being loaded from DB; reject so RocketMQ retries
-            // after a delay rather than dispatching into an incomplete order book.
-            log.warn("Matching engine not yet initialized, rejecting order {} for retry",
-                    orderMessage.getOrderId());
-            throw new IllegalStateException("Matching engine not yet initialized");
-        }
-        MatchingEngine engine = matchingEngineManager.getEngineBySymbol(orderMessage.getStockSymbol());
-        engine.dispatch(orderMessage);
+        // Route to the per-symbol ordered topic.  Same symbol always lands on the
+        // same queue (and therefore the same consumer instance).
+        rocketMQTemplate.syncSendOrderly(
+                ORDER_ROUTING_TOPIC, orderMessage, orderMessage.getStockSymbol());
+        log.debug("Routed order {} symbol={} to {}",
+                orderMessage.getOrderId(), orderMessage.getStockSymbol(), ORDER_ROUTING_TOPIC);
     }
 }
